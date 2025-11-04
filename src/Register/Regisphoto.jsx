@@ -8,5 +8,4 @@ const Regisphoto = () => {
   <h4>again</h4>
   </>
 }
-
 export default Regisphoto
