@@ -1,11 +1,539 @@
-import React from 'react'
+
+import React, { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { useFormik } from "formik";
+import { useDispatch, useSelector } from 'react-redux';
+import { registerUser, clearError } from "../Slice.jsx";
+import Cropper from "react-cropper";
+import "../Style.css";
+
+// Icons (using Heroicons)
+const UserIcon = () => (
+  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);
+
+const EmailIcon = () => (
+  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </svg>
+);
+
+const CameraIcon = () => (
+  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
+// Eye icons for password toggle
+const EyeOpenIcon = () => (
+  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+  </svg>
+);
+
+const EyeClosedIcon = () => (
+  <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L6.59 6.59m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+  </svg>
+);
 
 const Regisphoto = () => {
-  return <>
-  <h1>regis</h1>
-  <h2>added</h2>
-  <h3>by shiva</h3>
-  <h4>again</h4>
-  </>
-}
-export default Regisphoto
+  const [imagePreview, setImagePreview] = useState(null);
+  const [showCropper, setShowCropper] = useState(false);
+  const [originalImage, setOriginalImage] = useState(null);
+  // Toggle states for password visibility
+  const [showPassword, setShowPassword] = useState(false);
+  const [showCpassword, setShowCpassword] = useState(false);
+
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const fileInputRef = useRef(null);
+  const cropperRef = useRef(null);
+
+  // Get Redux state
+  const { loading, error, currentUser } = useSelector(state => state.user);
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+  // Toggle functions
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
+  const toggleCpasswordVisibility = () => {
+    setShowCpassword(!showCpassword);
+  };
+
+  const formik = useFormik({
+    initialValues: {
+      profilePhoto: null,
+      username: "",
+      email: "",
+      password: "",
+      cpassword: "",
+    },
+    validate: (values) => {
+      const errors = {};
+      if (!values.username?.trim()) errors.username = "Full username is required.";
+      if (!values.email?.trim()) errors.email = "Email is required.";
+      else if (!emailRegex.test(values.email)) errors.email = "Enter a valid email.";
+      if (!values.password) errors.password = "Password is required.";
+      else if (!passwordRegex.test(values.password))
+        errors.password = "Password must be 8+ chars, include upper, lower, digit and special char.";
+      if (!values.cpassword) errors.cpassword = "Please confirm password.";
+      else if (values.password !== values.cpassword) errors.cpassword = "Passwords do not match.";
+      return errors;
+    },
+    onSubmit: async (values, { resetForm, setSubmitting }) => {
+      try {
+        // Clear previous errors
+        dispatch(clearError());
+        
+        console.log('Form submission started with values:', {
+          ...values,
+          profilePhoto: values.profilePhoto ? `File: ${values.profilePhoto.username}` : 'No file'
+        });
+
+        // Dispatch the registration action to REAL API
+        const result = await dispatch(registerUser(values));
+        
+        if (registerUser.fulfilled.match(result)) {
+          // Registration successful - reset form and navigate
+          console.log('Registration successful, navigating to login...');
+          resetForm();
+          if (fileInputRef.current) fileInputRef.current.value = "";
+          if (imagePreview) {
+            try { URL.revokeObjectURL(imagePreview); } catch {}
+            setImagePreview(null);
+          }
+          setOriginalImage(null);
+          setShowCropper(false);
+          
+          // Navigate to login after successful registration
+          setTimeout(() => {
+            navigate("/login");
+          }, 1500);
+        } else if (registerUser.rejected.match(result)) {
+          // Registration failed - error is already set in state
+          console.error('Registration failed:', result.error);
+        }
+      } catch (error) {
+        console.error('Unexpected error during registration:', error);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+  });
+
+  // File change handler with React Cropper
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      formik.setFieldError("profilePhoto", "Please select an image file.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      formik.setFieldError("profilePhoto", "Image must be smaller than 5 MB.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setOriginalImage(event.target.result);
+      setShowCropper(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Crop and set the image - FIXED VERSION
+  const handleCrop = () => {
+    if (cropperRef.current && cropperRef.current.cropper) {
+      const cropper = cropperRef.current.cropper;
+      
+      // Get cropped canvas
+      const canvas = cropper.getCroppedCanvas({
+        width: 200,
+        height: 200,
+        fillColor: '#fff',
+        imageSmoothingEnabled: true,
+        imageSmoothingQuality: 'high'
+      });
+      
+      if (!canvas) {
+        console.error("Canvas is null - cannot crop image");
+        return;
+      }
+      
+      // Convert canvas to blob
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            console.error("Failed to create blob from canvas");
+            return;
+          }
+          
+          // Create file from blob
+          const profilePhoto = new File([blob], "profile-image.png", { 
+            type: "image/png",
+            lastModified: Date.now()
+          });
+          
+          // Create preview URL
+          const previewUrl = URL.createObjectURL(blob);
+          
+          // Clean up previous preview if exists
+          if (imagePreview) {
+            try { 
+              URL.revokeObjectURL(imagePreview); 
+            } catch (e) {
+              console.warn("Error revoking previous image URL:", e);
+            }
+          }
+          
+          // Update state and formik
+          setImagePreview(previewUrl);
+          formik.setFieldValue("profilePhoto", profilePhoto);
+          formik.setFieldError("profilePhoto", undefined);
+          setShowCropper(false);
+          
+          console.log("Image cropped successfully:", {
+            file: profilePhoto,
+            size: blob.size,
+            type: blob.type
+          });
+        }, 
+        "image/png", 
+        0.95
+      );
+    } else {
+      console.error("Cropper instance not found");
+    }
+  };
+
+  const cancelCrop = () => {
+    setShowCropper(false);
+    setOriginalImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    formik.setFieldValue("profilePhoto", null);
+  };
+
+  // Clear Redux error when user starts typing
+  const handleInputFocus = () => {
+    if (error) {
+      dispatch(clearError());
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6" id="bg">
+      {/* Glass effect container */}
+      <div className="w-full max-w-lg bg-white/5 backdrop-blur-lg shadow-xl border border-white/30 rounded-2xl overflow-hidden relative">
+        {/* Frosted glass overlay */}
+        <div className="absolute inset-0 bg-white/5 backdrop-blur-sm"></div>
+        
+        {/* Content */}
+        <div className="relative z-10">
+          {/* Header Section with Background */}
+          <div className="bg-gradient-to-r from-blue-600/80 to-purple-700/80 py-12 h-[130px] relative">
+            {/* Background Pattern */}
+            <div className="absolute inset-0 opacity-10">
+              <div className="absolute inset-0" style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.1'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+                backgroundSize: '20px 20px'
+              }}></div>
+            </div>
+            
+            {/* Avatar Section */}
+            <div className="relative z-10">
+              <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-45" id="photo">
+                <div className="w-28 h-28 rounded-full bg-gray-200 backdrop-blur-sm flex items-center justify-center border-4 border-white/50 shadow-2xl profile-avatar">
+                  {imagePreview ? (
+                    <img src={imagePreview} alt="avatar" className="w-full h-full object-cover rounded-full" />
+                  ) : (
+                    <div className="w-[40px] h-[40px] bg-gray-100/80 backdrop-blur-sm rounded-full flex items-center justify-center">
+                      <CameraIcon />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-9 text-center" id="upload">
+                  <label
+                    htmlFor="profilePhoto"
+                    className="text-white h-[35px] font-semibold cursor-pointer inline-flex items-center gap-2 hover:bg-blue-700 transition-colors bg-blue-600 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20"
+                  >
+                    <span>Upload Photo</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <polyline points="17 8 12 3 7 8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      <line x1="12" y1="3" x2="12" y2="15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </label>
+                  <input
+                    id="profilePhoto"
+                    name="profilePhoto"
+                    type="file"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Form body */}
+          <div className="pt-20 px-8 pb-8">
+            {/* Display Redux error */}
+            {error && (
+              <div className="mb-4 p-3 bg-red-50/80 backdrop-blur-sm border border-red-200 rounded-lg">
+                <p className="text-red-700 text-sm flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span className="font-medium">Registration Error:</span> {error}
+                </p>
+                <p className="text-red-600 text-xs mt-1">
+                  {error.includes('Network') || error.includes('ERR_NETWORK') 
+                    ? "Cannot connect to server. Please check if the backend is running on port 5000."
+                    : "Please check your information and try again."
+                  }
+                </p>
+              </div>
+            )}
+
+            <form onSubmit={formik.handleSubmit} noValidate>
+              {/* username Field with Icon */}
+              <div className="mb-5">
+                <label className="block text-lg font-semibold mb-3 text-white">Full Name</label>
+                <div className="relative">
+                  <input
+                    name="username"
+                    id="username"
+                    value={formik.values.username}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    onFocus={handleInputFocus}
+                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-2 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    placeholder="Enter your full name"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <UserIcon />
+                  </div>
+                </div>
+                {formik.touched.username && formik.errors.username && (
+                  <p className="text-sm text-red-500 mt-2 flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    {formik.errors.username}
+                  </p>
+                )}
+              </div>
+
+              {/* Email Field with Icon */}
+              <div className="mb-5">
+                <label className="block text-lg font-semibold mb-3 text-white">Email Address</label>
+                <div className="relative">
+                  <input
+                    name="email"
+                    id="email"
+                    value={formik.values.email}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    onFocus={handleInputFocus}
+                    type="email"
+                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    placeholder="Enter your email address"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                    <EmailIcon />
+                  </div>
+                </div>
+                {formik.touched.email && formik.errors.email && (
+                  <p className="text-sm text-red-500 mt-2 flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    {formik.errors.email}
+                  </p>
+                )}
+              </div>
+
+              {/* Password Field with Icon and Toggle */}
+              <div className="mb-5">
+                <label className="block text-lg font-semibold mb-3 text-white">Password</label>
+                <div className="relative">
+                  <input
+                    name="password"
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={formik.values.password}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    onFocus={handleInputFocus}
+                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    placeholder="Create password"
+                    autoComplete="new-password"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <button
+                      type="button"
+                      onClick={togglePasswordVisibility}
+                      className="text-gray-400 hover:text-gray-600 focus:outline-none transition-colors"
+                    >
+                      {showPassword ? <EyeClosedIcon /> : <EyeOpenIcon />}
+                    </button>
+                  </div>
+                </div>
+                {formik.touched.password && formik.errors.password && (
+                  <p className="text-sm text-red-500 mt-2 flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    {formik.errors.password}
+                  </p>
+                )}
+              </div>
+
+              {/* Confirm Password Field with Icon and Toggle */}
+              <div className="mb-6">
+                <label className="block text-lg font-semibold mb-3 text-white">Confirm Password</label>
+                <div className="relative">
+                  <input
+                    name="cpassword"
+                    id="cpassword"
+                    type={showCpassword ? "text" : "password"}
+                    value={formik.values.cpassword}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    onFocus={handleInputFocus}
+                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    placeholder="Confirm your password"
+                    autoComplete="new-password"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <button
+                      type="button"
+                      onClick={toggleCpasswordVisibility}
+                      className="text-gray-400 hover:text-gray-600 focus:outline-none transition-colors"
+                    >
+                      {showCpassword ? <EyeClosedIcon /> : <EyeOpenIcon />}
+                    </button>
+                  </div>
+                </div>
+                {formik.touched.cpassword && formik.errors.cpassword && (
+                  <p className="text-sm text-red-500 mt-2 flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    {formik.errors.cpassword}
+                  </p>
+                )}
+              </div>
+
+              {/* Submit button */}
+              <div className="mb-4">
+                <button
+                  type="submit"
+                  disabled={loading || formik.isSubmitting}
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-700 text-white text-lg font-semibold py-4 rounded-lg hover:from-blue-700 hover:to-purple-800 transition disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg transform hover:scale-105 transition-transform duration-200 backdrop-blur-sm"
+                >
+                  {loading || formik.isSubmitting ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Registering...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                      </svg>
+                      Register
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* Footer - login link */}
+            <div className="text-center text-sm text-white">
+              Already have an account?{" "}
+              <button
+                type="button"
+                onClick={() => navigate("/login")}
+                className="text-blue-700 font-semibold hover:underline transition-colors hover:text-blue-800"
+              >
+                Login here
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* React Cropper Modal */}
+        {showCropper && originalImage && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 cropper-modal-overlay">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden cropper-modal-content">
+              <div className="p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800">Crop Your Profile Picture</h3>
+                <p className="text-sm text-gray-600 mt-1">Adjust the crop area and click Save when done</p>
+              </div>
+              
+              <div className="p-4 max-h-[60vh] overflow-auto">
+                <Cropper
+                  ref={cropperRef}
+                  src={originalImage}
+                  style={{ height: 400, width: "100%" }}
+                  aspectRatio={1}
+                  guides={true}
+                  background={false}
+                  responsive={true}
+                  autoCropArea={1}
+                  checkOrientation={false}
+                  viewMode={1}
+                  minCropBoxHeight={100}
+                  minCropBoxWidth={100}
+                  ready={() => {
+                    console.log("Cropper is ready");
+                  }}
+                />
+              </div>
+              
+              <div className="p-4 border-t border-gray-200 flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={cancelCrop}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCrop}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Save Cropped Image
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default Regisphoto;
