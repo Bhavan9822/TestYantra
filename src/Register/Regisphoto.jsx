@@ -235,32 +235,57 @@ const Regisphoto = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6" id="bg">
-      {/* Glass effect container */}
-      <div className="w-full max-w-lg bg-white/5 backdrop-blur-lg shadow-xl border border-white/30 rounded-2xl overflow-hidden relative">
-        {/* Frosted glass overlay */}
-        <div className="absolute inset-0 bg-white/5 backdrop-blur-sm"></div>
-        
+    <div className="min-h-screen bg-gradient-to-br from-blue-300 to-purple-500 flex items-center justify-center p-6" id="bg">
+      {/* Glass effect container - Safari compatible */}
+      <div 
+        className="w-full max-w-lg shadow-xl border border-white/30 rounded-2xl overflow-hidden relative"
+        style={{
+          background: 'rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)', // Safari specific
+          boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)'
+        }}
+      >
         {/* Content */}
-        <div className="relative z-10">
+        <div className="relative z-10" id="id1">
           {/* Header Section with Background */}
-          <div className="bg-gradient-to-r from-blue-600/80 to-purple-700/80 py-12 h-[130px] relative">
+          <div 
+            className="py-2 h-[130px] relative overflow-visible" id="id3"
+            style={{
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(126, 58, 242, 0.8) 100%)'
+            }}
+          >
             {/* Background Pattern */}
-            <div className="absolute inset-0 opacity-10">
-              <div className="absolute inset-0" style={{
+            <div 
+              className="absolute inset-0"
+              style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.1'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
                 backgroundSize: '20px 20px'
-              }}></div>
-            </div>
+              }}
+            ></div>
             
             {/* Avatar Section */}
-            <div className="relative z-10">
-              <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-45" id="photo">
-                <div className="w-28 h-28 rounded-full bg-gray-200 backdrop-blur-sm flex items-center justify-center border-4 border-white/50 shadow-2xl profile-avatar">
+            <div className="relative z-10" id="id2">
+              <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-55" id="photo">
+                <div 
+                  className="w-28 h-28 rounded-full flex items-center justify-center border-4 border-white/50 shadow-2xl profile-avatar"
+                  style={{
+                    background: 'rgba(243, 244, 246, 0.8)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)'
+                  }}
+                >
                   {imagePreview ? (
                     <img src={imagePreview} alt="avatar" className="w-full h-full object-cover rounded-full" />
                   ) : (
-                    <div className="w-[40px] h-[40px] bg-gray-100/80 backdrop-blur-sm rounded-full flex items-center justify-center">
+                    <div 
+                      className="w-[40px] h-[40px] rounded-full flex items-center justify-center"
+                      style={{
+                        background: 'rgba(243, 244, 246, 0.8)',
+                        backdropFilter: 'blur(10px)',
+                        WebkitBackdropFilter: 'blur(10px)'
+                      }}
+                    >
                       <CameraIcon />
                     </div>
                   )}
@@ -269,7 +294,12 @@ const Regisphoto = () => {
                 <div className="mt-9 text-center" id="upload">
                   <label
                     htmlFor="profilePhoto"
-                    className="text-white h-[35px] font-semibold cursor-pointer inline-flex items-center gap-2 hover:bg-blue-700 transition-colors bg-blue-600 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20"
+                    className="text-white h-[35px] font-semibold cursor-pointer inline-flex items-center gap-2 hover:bg-blue-700 transition-colors px-4 py-2 rounded-lg border border-white/20"
+                    style={{
+                      background: 'rgba(37, 99, 235, 0.9)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)'
+                    }}
                   >
                     <span>Upload Photo</span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -293,10 +323,17 @@ const Regisphoto = () => {
           </div>
 
           {/* Form body */}
-          <div className="pt-20 px-8 pb-8">
+          <div className="pt-20 px-8 pb-8" id="id4">
             {/* Display Redux error */}
             {error && (
-              <div className="mb-4 p-3 bg-red-50/80 backdrop-blur-sm border border-red-200 rounded-lg">
+              <div 
+                className="mb-4 p-3 border border-red-200 rounded-lg"
+                style={{
+                  background: 'rgba(254, 242, 242, 0.8)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)'
+                }}
+              >
                 <p className="text-red-700 text-sm flex items-center gap-2">
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -313,7 +350,7 @@ const Regisphoto = () => {
             )}
 
             <form onSubmit={formik.handleSubmit} noValidate>
-              {/* username Field with Icon */}
+              {/* Username Field with Icon */}
               <div className="mb-5">
                 <label className="block text-lg font-semibold mb-3 text-white">Full Name</label>
                 <div className="relative">
@@ -324,8 +361,13 @@ const Regisphoto = () => {
                     onChange={formik.handleChange}
                     onBlur={formik.handleBlur}
                     onFocus={handleInputFocus}
-                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-2 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    className="w-full h-11 rounded-lg py-2 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
                     placeholder="Enter your full name"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.6)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)'
+                    }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                     <UserIcon />
@@ -353,8 +395,13 @@ const Regisphoto = () => {
                     onBlur={formik.handleBlur}
                     onFocus={handleInputFocus}
                     type="email"
-                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    className="w-full h-11 rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
                     placeholder="Enter your email address"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.6)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)'
+                    }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                     <EmailIcon />
@@ -382,9 +429,14 @@ const Regisphoto = () => {
                     onChange={formik.handleChange}
                     onBlur={formik.handleBlur}
                     onFocus={handleInputFocus}
-                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    className="w-full h-11 rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
                     placeholder="Create password"
                     autoComplete="new-password"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.6)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)'
+                    }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                     <button
@@ -418,9 +470,14 @@ const Regisphoto = () => {
                     onChange={formik.handleChange}
                     onBlur={formik.handleBlur}
                     onFocus={handleInputFocus}
-                    className="w-full h-11 bg-white/60 backdrop-blur-sm rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
+                    className="w-full h-11 rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
                     placeholder="Confirm your password"
                     autoComplete="new-password"
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.6)',
+                      backdropFilter: 'blur(10px)',
+                      WebkitBackdropFilter: 'blur(10px)'
+                    }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
                     <button
@@ -447,7 +504,12 @@ const Regisphoto = () => {
                 <button
                   type="submit"
                   disabled={loading || formik.isSubmitting}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-700 text-white text-lg font-semibold py-4 rounded-lg hover:from-blue-700 hover:to-purple-800 transition disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg transform hover:scale-105 transition-transform duration-200 backdrop-blur-sm"
+                  className="w-full text-white text-lg font-semibold py-4 rounded-lg transition disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg transform hover:scale-105 transition-transform duration-200"
+                  style={{
+                    background: 'linear-gradient(135deg, rgb(59, 130, 246) 0%, rgb(126, 58, 242) 100%)',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)'
+                  }}
                 >
                   {loading || formik.isSubmitting ? (
                     <>
@@ -475,7 +537,7 @@ const Regisphoto = () => {
               <button
                 type="button"
                 onClick={() => navigate("/login")}
-                className="text-blue-700 font-semibold hover:underline transition-colors hover:text-blue-800"
+                className="text-blue-800 font-semibold hover:underline transition-colors hover:text-blue-900"
               >
                 Login here
               </button>
