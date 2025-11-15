@@ -1,15 +1,5 @@
 @import "tailwindcss";
 
-/* #backimg {
-  background-image: url("./Assets/Screenshot 2025-11-07 at 11.24.35 AM.png");
-  background-size: 507px 175px;
-  background-position: center;
-  background-repeat: no-repeat;
-  border-radius: 11px;
-  width: 507px;
-  height: 175px;
-} */
-
 #photo{
     /* border: 2px solid red; */
     display: flex;
@@ -24,7 +14,7 @@
 }
 #bg{
 
-    background-image: url(./Assets/bp2.avif);
+    background-image: url(./Assets/bg5.jpg);
     background-repeat: no-repeat;
     background-size: cover;
 }
