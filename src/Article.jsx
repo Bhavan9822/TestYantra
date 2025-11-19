@@ -1,9 +1,9 @@
 import React from 'react'
 
 const Article = () => {
-  return (
-    <div>Article</div>
-  )
+  return <>
+  <h1>hii</h1>
+  </>
 }
 
 export default Article
