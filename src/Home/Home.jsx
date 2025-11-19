@@ -121,6 +121,7 @@ export const Home = () => {
         </aside>
         <aside id='suggestions'></aside>
       </section>
+      <summary></summary>
     </main>
       
     </>
