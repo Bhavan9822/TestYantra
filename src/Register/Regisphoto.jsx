@@ -1,9 +1,7 @@
-
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useFormik } from "formik";
-import { useDispatch, useSelector } from 'react-redux';
-import { registerUser, clearError } from "../Slice.jsx";
+import axios from "axios";
 import Cropper from "react-cropper";
 import "../Style.css";
 
@@ -41,33 +39,35 @@ const EyeClosedIcon = () => (
   </svg>
 );
 
+const API_BASE_URL = " http://192.168.0.196:5000/api";
+
 const Regisphoto = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const [showCropper, setShowCropper] = useState(false);
   const [originalImage, setOriginalImage] = useState(null);
-  // Toggle states for password visibility
   const [showPassword, setShowPassword] = useState(false);
   const [showCpassword, setShowCpassword] = useState(false);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [serverError, setServerError] = useState("");
 
   const navigate = useNavigate();
-  const dispatch = useDispatch();
   const fileInputRef = useRef(null);
   const cropperRef = useRef(null);
-
-  // Get Redux state
-  const { loading, error, currentUser } = useSelector(state => state.user);
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
-  // Toggle functions
-  const togglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
-  };
+  useEffect(() => {
+    if (registrationSuccess && !loading) {
+      const timer = setTimeout(() => navigate("/login"), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [registrationSuccess, loading, navigate]);
 
-  const toggleCpasswordVisibility = () => {
-    setShowCpassword(!showCpassword);
-  };
+  const togglePasswordVisibility = () => setShowPassword(!showPassword);
+  const toggleCpasswordVisibility = () => setShowCpassword(!showCpassword);
 
   const formik = useFormik({
     initialValues: {
@@ -89,48 +89,70 @@ const Regisphoto = () => {
       else if (values.password !== values.cpassword) errors.cpassword = "Passwords do not match.";
       return errors;
     },
-    onSubmit: async (values, { resetForm, setSubmitting }) => {
+    onSubmit: async (values, { resetForm }) => {
+      setServerError("");
+      setRegistrationSuccess(false);
+
+      // Basic validation guard
+      if (!values.username || !values.email || !values.password) {
+        setServerError("Please fill in all required fields.");
+        return;
+      }
+
+      setLoading(true);
       try {
-        // Clear previous errors
-        dispatch(clearError());
-        
-        console.log('Form submission started with values:', {
-          ...values,
-          profilePhoto: values.profilePhoto ? `File: ${values.profilePhoto.username}` : 'No file'
+        // Build FormData
+        const formData = new FormData();
+        formData.append("username", values.username);
+        formData.append("email", values.email);
+        formData.append("password", values.password);
+        if (values.profilePhoto) {
+          formData.append("profilePhoto", values.profilePhoto);
+        }
+
+        console.log("Posting registration to server:", {
+          username: values.username,
+          email: values.email,
+          hasFile: !!values.profilePhoto,
         });
 
-        // Dispatch the registration action to REAL API
-        const result = await dispatch(registerUser(values));
-        
-        if (registerUser.fulfilled.match(result)) {
-          // Registration successful - reset form and navigate
-          console.log('Registration successful, navigating to login...');
-          resetForm();
-          if (fileInputRef.current) fileInputRef.current.value = "";
-          if (imagePreview) {
-            try { URL.revokeObjectURL(imagePreview); } catch {}
-            setImagePreview(null);
+        const response = await axios.post(
+          `${API_BASE_URL}/users/register`,
+          formData,
+          {
+            headers: {
+              // Important: do NOT set 'Content-Type' manually for multipart/form-data
+            },
+            timeout: 15000,
           }
-          setOriginalImage(null);
-          setShowCropper(false);
-          
-          // Navigate to login after successful registration
-          setTimeout(() => {
-            navigate("/login");
-          }, 1500);
-        } else if (registerUser.rejected.match(result)) {
-          // Registration failed - error is already set in state
-          console.error('Registration failed:', result.error);
+        );
+
+        console.log("Registration response:", response.data);
+        setRegistrationSuccess(true);
+
+        // Reset visual state and form
+        resetForm();
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        if (imagePreview) {
+          try { URL.revokeObjectURL(imagePreview); } catch {}
+          setImagePreview(null);
         }
-      } catch (error) {
-        console.error('Unexpected error during registration:', error);
+        setOriginalImage(null);
+        setShowCropper(false);
+      } catch (err) {
+        console.error("Registration error:", err);
+        const msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.message ||
+          "Registration failed. Please try again.";
+        setServerError(msg);
       } finally {
-        setSubmitting(false);
+        setLoading(false);
       }
     },
   });
 
-  // File change handler with React Cropper
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -140,6 +162,7 @@ const Regisphoto = () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
+
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       formik.setFieldError("profilePhoto", "Image must be smaller than 5 MB.");
@@ -155,68 +178,47 @@ const Regisphoto = () => {
     reader.readAsDataURL(file);
   };
 
-  // Crop and set the image - FIXED VERSION
   const handleCrop = () => {
     if (cropperRef.current && cropperRef.current.cropper) {
       const cropper = cropperRef.current.cropper;
-      
-      // Get cropped canvas
       const canvas = cropper.getCroppedCanvas({
         width: 200,
         height: 200,
-        fillColor: '#fff',
+        fillColor: "#fff",
         imageSmoothingEnabled: true,
-        imageSmoothingQuality: 'high'
+        imageSmoothingQuality: "high",
       });
-      
+
       if (!canvas) {
         console.error("Canvas is null - cannot crop image");
         return;
       }
-      
-      // Convert canvas to blob
+
       canvas.toBlob(
         (blob) => {
           if (!blob) {
             console.error("Failed to create blob from canvas");
             return;
           }
-          
-          // Create file from blob
-          const profilePhoto = new File([blob], "profile-image.png", { 
+
+          const profilePhoto = new File([blob], "profile-image.png", {
             type: "image/png",
-            lastModified: Date.now()
+            lastModified: Date.now(),
           });
-          
-          // Create preview URL
+
           const previewUrl = URL.createObjectURL(blob);
-          
-          // Clean up previous preview if exists
           if (imagePreview) {
-            try { 
-              URL.revokeObjectURL(imagePreview); 
-            } catch (e) {
-              console.warn("Error revoking previous image URL:", e);
-            }
+            try { URL.revokeObjectURL(imagePreview); } catch {}
           }
-          
-          // Update state and formik
+
           setImagePreview(previewUrl);
           formik.setFieldValue("profilePhoto", profilePhoto);
           formik.setFieldError("profilePhoto", undefined);
           setShowCropper(false);
-          
-          console.log("Image cropped successfully:", {
-            file: profilePhoto,
-            size: blob.size,
-            type: blob.type
-          });
-        }, 
-        "image/png", 
+        },
+        "image/png",
         0.95
       );
-    } else {
-      console.error("Cropper instance not found");
     }
   };
 
@@ -227,63 +229,56 @@ const Regisphoto = () => {
     formik.setFieldValue("profilePhoto", null);
   };
 
-  // Clear Redux error when user starts typing
   const handleInputFocus = () => {
-    if (error) {
-      dispatch(clearError());
-    }
+    if (serverError) setServerError("");
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-300 to-purple-500 flex items-center justify-center p-6" id="bg">
-      {/* Glass effect container - Safari compatible */}
-      <div 
+      <div
         className="w-full max-w-lg shadow-xl border border-white/30 rounded-2xl overflow-hidden relative"
         style={{
-          background: 'rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)', // Safari specific
-          boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)'
+          background: "rgba(255, 255, 255, 0.1)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          boxShadow: "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
         }}
       >
-        {/* Content */}
         <div className="relative z-10" id="id1">
-          {/* Header Section with Background */}
-          <div 
-            className="py-2 h-[130px] relative overflow-visible" id="id3"
+          <div
+            className="py-2 h-[130px] relative overflow-visible"
+            id="id3"
             style={{
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(126, 58, 242, 0.8) 100%)'
+              background: "linear-gradient(135deg, rgba(59, 130, 246, 0.8) 0%, rgba(126, 58, 242, 0.8) 100%)",
             }}
           >
-            {/* Background Pattern */}
-            <div 
+            <div
               className="absolute inset-0"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.1'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-                backgroundSize: '20px 20px'
+                backgroundSize: "20px 20px",
               }}
             ></div>
-            
-            {/* Avatar Section */}
+
             <div className="relative z-10" id="id2">
               <div className="absolute left-1/2 transform -translate-x-1/2 -bottom-55" id="photo">
-                <div 
+                <div
                   className="w-28 h-28 rounded-full flex items-center justify-center border-4 border-white/50 shadow-2xl profile-avatar"
                   style={{
-                    background: 'rgba(243, 244, 246, 0.8)',
-                    backdropFilter: 'blur(10px)',
-                    WebkitBackdropFilter: 'blur(10px)'
+                    background: "rgba(243, 244, 246, 0.8)",
+                    backdropFilter: "blur(10px)",
+                    WebkitBackdropFilter: "blur(10px)",
                   }}
                 >
                   {imagePreview ? (
                     <img src={imagePreview} alt="avatar" className="w-full h-full object-cover rounded-full" />
                   ) : (
-                    <div 
+                    <div
                       className="w-[40px] h-[40px] rounded-full flex items-center justify-center"
                       style={{
-                        background: 'rgba(243, 244, 246, 0.8)',
-                        backdropFilter: 'blur(10px)',
-                        WebkitBackdropFilter: 'blur(10px)'
+                        background: "rgba(243, 244, 246, 0.8)",
+                        backdropFilter: "blur(10px)",
+                        WebkitBackdropFilter: "blur(10px)",
                       }}
                     >
                       <CameraIcon />
@@ -296,9 +291,9 @@ const Regisphoto = () => {
                     htmlFor="profilePhoto"
                     className="text-white h-[35px] font-semibold cursor-pointer inline-flex items-center gap-2 hover:bg-blue-700 transition-colors px-4 py-2 rounded-lg border border-white/20"
                     style={{
-                      background: 'rgba(37, 99, 235, 0.9)',
-                      backdropFilter: 'blur(10px)',
-                      WebkitBackdropFilter: 'blur(10px)'
+                      background: "rgba(37, 99, 235, 0.9)",
+                      backdropFilter: "blur(10px)",
+                      WebkitBackdropFilter: "blur(10px)",
                     }}
                   >
                     <span>Upload Photo</span>
@@ -322,35 +317,49 @@ const Regisphoto = () => {
             </div>
           </div>
 
-          {/* Form body */}
           <div className="pt-20 px-8 pb-8" id="id4">
-            {/* Display Redux error */}
-            {error && (
-              <div 
+            {registrationSuccess && (
+              <div
+                className="mb-4 p-3 border border-green-200 rounded-lg"
+                style={{
+                  background: "rgba(240, 253, 244, 0.8)",
+                  backdropFilter: "blur(10px)",
+                  WebkitBackdropFilter: "blur(10px)",
+                }}
+              >
+                <p className="text-green-700 text-sm flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="font-medium">Registration Successful!</span> Redirecting to login page...
+                </p>
+              </div>
+            )}
+
+            {serverError && (
+              <div
                 className="mb-4 p-3 border border-red-200 rounded-lg"
                 style={{
-                  background: 'rgba(254, 242, 242, 0.8)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)'
+                  background: "rgba(254, 242, 242, 0.8)",
+                  backdropFilter: "blur(10px)",
+                  WebkitBackdropFilter: "blur(10px)",
                 }}
               >
                 <p className="text-red-700 text-sm flex items-center gap-2">
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
-                  <span className="font-medium">Registration Error:</span> {error}
+                  <span className="font-medium">Registration Error:</span> {serverError}
                 </p>
                 <p className="text-red-600 text-xs mt-1">
-                  {error.includes('Network') || error.includes('ERR_NETWORK') 
+                  {serverError.includes("Network") || serverError.includes("ERR_NETWORK")
                     ? "Cannot connect to server. Please check if the backend is running on port 5000."
-                    : "Please check your information and try again."
-                  }
+                    : "Please check your information and try again."}
                 </p>
               </div>
             )}
 
             <form onSubmit={formik.handleSubmit} noValidate>
-              {/* Username Field with Icon */}
               <div className="mb-5">
                 <label className="block text-lg font-semibold mb-3 text-white">Full Name</label>
                 <div className="relative">
@@ -364,9 +373,9 @@ const Regisphoto = () => {
                     className="w-full h-11 rounded-lg py-2 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
                     placeholder="Enter your full name"
                     style={{
-                      background: 'rgba(255, 255, 255, 0.6)',
-                      backdropFilter: 'blur(10px)',
-                      WebkitBackdropFilter: 'blur(10px)'
+                      background: "rgba(255, 255, 255, 0.6)",
+                      backdropFilter: "blur(10px)",
+                      WebkitBackdropFilter: "blur(10px)",
                     }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
@@ -383,7 +392,6 @@ const Regisphoto = () => {
                 )}
               </div>
 
-              {/* Email Field with Icon */}
               <div className="mb-5">
                 <label className="block text-lg font-semibold mb-3 text-white">Email Address</label>
                 <div className="relative">
@@ -398,9 +406,9 @@ const Regisphoto = () => {
                     className="w-full h-11 rounded-lg py-4 px-4 pl-4 pr-12 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 border border-white/50 transition-colors"
                     placeholder="Enter your email address"
                     style={{
-                      background: 'rgba(255, 255, 255, 0.6)',
-                      backdropFilter: 'blur(10px)',
-                      WebkitBackdropFilter: 'blur(10px)'
+                      background: "rgba(255, 255, 255, 0.6)",
+                      backdropFilter: "blur(10px)",
+                      WebkitBackdropFilter: "blur(10px)",
                     }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
@@ -417,7 +425,6 @@ const Regisphoto = () => {
                 )}
               </div>
 
-              {/* Password Field with Icon and Toggle */}
               <div className="mb-5">
                 <label className="block text-lg font-semibold mb-3 text-white">Password</label>
                 <div className="relative">
@@ -433,9 +440,9 @@ const Regisphoto = () => {
                     placeholder="Create password"
                     autoComplete="new-password"
                     style={{
-                      background: 'rgba(255, 255, 255, 0.6)',
-                      backdropFilter: 'blur(10px)',
-                      WebkitBackdropFilter: 'blur(10px)'
+                      background: "rgba(255, 255, 255, 0.6)",
+                      backdropFilter: "blur(10px)",
+                      WebkitBackdropFilter: "blur(10px)",
                     }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
@@ -458,7 +465,6 @@ const Regisphoto = () => {
                 )}
               </div>
 
-              {/* Confirm Password Field with Icon and Toggle */}
               <div className="mb-6">
                 <label className="block text-lg font-semibold mb-3 text-white">Confirm Password</label>
                 <div className="relative">
@@ -474,9 +480,9 @@ const Regisphoto = () => {
                     placeholder="Confirm your password"
                     autoComplete="new-password"
                     style={{
-                      background: 'rgba(255, 255, 255, 0.6)',
-                      backdropFilter: 'blur(10px)',
-                      WebkitBackdropFilter: 'blur(10px)'
+                      background: "rgba(255, 255, 255, 0.6)",
+                      backdropFilter: "blur(10px)",
+                      WebkitBackdropFilter: "blur(10px)",
                     }}
                   />
                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
@@ -499,16 +505,15 @@ const Regisphoto = () => {
                 )}
               </div>
 
-              {/* Submit button */}
               <div className="mb-4">
                 <button
                   type="submit"
-                  disabled={loading || formik.isSubmitting}
+                  disabled={loading || formik.isSubmitting || registrationSuccess}
                   className="w-full text-white text-lg font-semibold py-4 rounded-lg transition disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg transform hover:scale-105 transition-transform duration-200"
                   style={{
-                    background: 'linear-gradient(135deg, rgb(59, 130, 246) 0%, rgb(126, 58, 242) 100%)',
-                    backdropFilter: 'blur(10px)',
-                    WebkitBackdropFilter: 'blur(10px)'
+                    background: "linear-gradient(135deg, rgb(59, 130, 246) 0%, rgb(126, 58, 242) 100%)",
+                    backdropFilter: "blur(10px)",
+                    WebkitBackdropFilter: "blur(10px)",
                   }}
                 >
                   {loading || formik.isSubmitting ? (
@@ -518,6 +523,13 @@ const Regisphoto = () => {
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                       </svg>
                       Registering...
+                    </>
+                  ) : registrationSuccess ? (
+                    <>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Registration Successful!
                     </>
                   ) : (
                     <>
@@ -531,7 +543,6 @@ const Regisphoto = () => {
               </div>
             </form>
 
-            {/* Footer - login link */}
             <div className="text-center text-sm text-white">
               Already have an account?{" "}
               <button
@@ -545,7 +556,6 @@ const Regisphoto = () => {
           </div>
         </div>
 
-        {/* React Cropper Modal */}
         {showCropper && originalImage && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 cropper-modal-overlay">
             <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden cropper-modal-content">
@@ -553,7 +563,7 @@ const Regisphoto = () => {
                 <h3 className="text-lg font-semibold text-gray-800">Crop Your Profile Picture</h3>
                 <p className="text-sm text-gray-600 mt-1">Adjust the crop area and click Save when done</p>
               </div>
-              
+
               <div className="p-4 max-h-[60vh] overflow-auto">
                 <Cropper
                   ref={cropperRef}
@@ -573,7 +583,7 @@ const Regisphoto = () => {
                   }}
                 />
               </div>
-              
+
               <div className="p-4 border-t border-gray-200 flex gap-3 justify-end">
                 <button
                   type="button"
@@ -599,3 +609,7 @@ const Regisphoto = () => {
 };
 
 export default Regisphoto;
+
+
+
+
