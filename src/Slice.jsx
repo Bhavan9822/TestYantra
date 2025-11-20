@@ -1,168 +1,163 @@
-
-// Slice.jsx
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 
-// Dynamic API base URL
-const API_BASE_URL = 'http://192.168.0.227:5000/api'
+const API_BASE_URL = 'http://192.168.0.28:5000/api';
 
-// Register user async thunk (unchanged as requested)
+// Register user async thunk
 export const registerUser = createAsyncThunk(
-  'user/register',
+  'auth/register',
   async (userData, { rejectWithValue }) => {
     try {
-      console.log('Sending registration request to:', `${API_BASE_URL}/users/register`);
-      console.log(userData)
-      const formData = new FormData();
-      
-      // Append all user data to FormData
-      Object.keys(userData).forEach(key => {
-        if (userData[key] !== null && userData[key] !== undefined) {
-          formData.append(key, userData[key]);
-        }
-      });
+      console.log('🔄 Sending registration request...');
+      console.log('📦 Incoming userData type:', userData instanceof FormData ? 'FormData' : typeof userData);
 
-      const config = {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      };
+      // If the caller already provided a FormData (e.g. from the component), use it directly.
+      let payload;
+      const headers = {}; // leave Content-Type unset for FormData so axios can set boundary
 
-      const response = await axios.post(
-        "http://192.168.0.227:5000/api/users/register",
-        formData,
-        config
-      );
+      if (userData instanceof FormData) {
+        payload = userData;
 
-      console.log('Registration successful:', response.data);
-      return response.data;
-
-    } catch (error) {
-      console.error('Registration API Error Details:', {
-        message: error.message,
-        code: error.code,
-        response: error.response?.data,
-        status: error.response?.status,
-        url: error.config?.url
-      });
-
-      const errorMessage = error.response?.data?.message 
-        || error.response?.data?.error
-        || error.message
-        || 'Network error - cannot reach server';
-
-      return rejectWithValue(errorMessage);
-    }
-  }
-);
-
-// GET all users async thunk (NEW)
-export const fetchAllUsers = createAsyncThunk(
-  'user/fetchAllUsers',
-  async (_, { rejectWithValue }) => {
-    try {
-      console.log('Fetching all users from:', `${API_BASE_URL}/users`);
-      
-      const response = await axios.get(`${API_BASE_URL}/users`);
-      
-      console.log('Users fetched successfully:', response.data);
-      return response.data;
-
-    } catch (error) {
-      console.error('Fetch Users API Error Details:', {
-        message: error.message,
-        code: error.code,
-        response: error.response?.data,
-        status: error.response?.status,
-        url: error.config?.url
-      });
-
-      const errorMessage = error.response?.data?.message 
-        || error.response?.data?.error
-        || error.message
-        || 'Network error - cannot reach server';
-
-      return rejectWithValue(errorMessage);
-    }
-  }
-);
-
-// Login user async thunk (UPDATED with local credential checking)
-export const loginUser = createAsyncThunk(
-  'user/login',
-  async (loginData, { rejectWithValue, getState }) => {
-    try {
-      console.log('Login attempt with:', loginData);
-      
-      const state = getState();
-      const allUsers = state.user.allUsers || [];
-      
-      console.log('Available users for checking:', allUsers);
-
-      // Check if credentials match any user in the fetched list
-      const matchedUser = allUsers.find(user => 
-        user.email === loginData.email && user.password === loginData.password
-      );
-
-      if (matchedUser) {
-        console.log('Credentials matched locally:', matchedUser);
-        
-        // Also make POST request to backend for additional verification/token
-        try {
-          const config = {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            timeout: 3000,
-          };
-
-          const response = await axios.post(
-            `${API_BASE_URL}/users/login`,
-            loginData,
-            config
-          );
-
-          console.log('Backend login successful:', response.data);
-          return { ...matchedUser, token: response.data.token };
-          
-        } catch (postError) {
-          console.warn('Backend login failed, but local credentials matched. Proceeding with login.');
-          // Even if backend POST fails, proceed with login since local credentials matched
-          return matchedUser;
+        // Debug log FormData entries
+        console.log('📋 FormData entries (component provided):');
+        for (const pair of userData.entries()) {
+          console.log(`   ${pair[0]}: ${pair[1] instanceof File ? `File(${pair[1].name})` :  pair[1]}`);
         }
       } else {
-        console.log('No matching user found in local data');
-        return rejectWithValue("Invalid credentials. Please check your email and password.");
+        // Build FormData from plain object
+        const formData = new FormData();
+        Object.keys(userData).forEach((key) => {
+          if (userData[key] !== null && userData[key] !== undefined) {
+            if (userData[key] instanceof File) {
+              console.log(`📁 Appending file: ${key} - ${userData[key].name}`);
+            } else {
+              console.log(`📝 Appending field: ${key} - ${userData[key]}`);
+            }
+            formData.append(key, userData[key]);
+          }
+        });
+
+        payload = formData;
+
+        console.log('📋 FormData contents (built in thunk):');
+        for (let pair of formData.entries()) {
+          console.log(`   ${pair[0]}: ${pair[1] instanceof File ? `File(${pair[1].name}) `: pair[1]}`);
+        }
       }
 
-    } catch (error) {
-      console.error('Login Error Details:', {
-        message: error.message,
-        code: error.code,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
+      const response = await axios.post(
+        `${API_BASE_URL}/users/register`,
+        payload,
+        {
+          headers, // do not set 'Content-Type' when payload is FormData
+          timeout: 5000,
+        }
+      );
 
-      const errorMessage = error.response?.data?.message 
-        || error.response?.data?.error
+      console.log('✅ Registration successful:', response.data);
+      return response.data;
+
+    } catch (error) {
+      console.error('❌ Registration API Error:', error);
+      console.error('📊 Error response data:', error.response?.data);
+      console.error('🔧 Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        headers: error.response?.headers
+      });
+      
+      const errorMessage = error.response?.data?.error 
+        || error.response?.data?.message
         || error.message
-        || 'Network error - cannot reach server';
+        || 'Registration failed - please try again';
 
       return rejectWithValue(errorMessage);
     }
   }
 );
 
-const userSlice = createSlice({
-  name: 'user',
+// Login user async thunk
+export const loginUser = createAsyncThunk(
+  'auth/login',
+  async (loginData, { rejectWithValue }) => {
+    try {
+      console.log('🔄 Attempting login for:', loginData.email);
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/users/login`,
+        loginData,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout: 5000,
+        }
+      );
+
+      console.log('✅ Login successful for:', loginData.email);
+      return response.data;
+
+    } catch (error) {
+      console.error('❌ Login API Error:', error);
+      console.error('📊 Error response:', error.response?.data);
+      
+      // Handle different types of errors
+      let errorMessage = 'Login failed';
+      
+      if (error.code === 'ERR_NETWORK') {
+        errorMessage = 'Cannot connect to server. Please check your connection.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Invalid email or password. Please try again.';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'User not found. Please check your credentials.';
+      } else {
+        errorMessage = error.response?.data?.error 
+          || error.response?.data?.message
+          || error.message
+          || 'Login failed - please try again';
+      }
+
+      return rejectWithValue(errorMessage);
+    }
+  }
+);
+
+// Validate user token (for persistent login)
+export const validateUser = createAsyncThunk(
+  'auth/validate',
+  async (_, { rejectWithValue }) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        throw new Error('No token found');
+      }
+
+      const response = await axios.get(
+        `${API_BASE_URL}/users/validate`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      localStorage.removeItem('authToken');
+      return rejectWithValue('Session expired. Please login again.');
+    }
+  }
+);
+
+const authSlice = createSlice({
+  name: 'auth',
   initialState: {
     currentUser: null,
-    allUsers: [], // NEW: Store all users for credential checking
     loading: false,
     error: null,
     success: false,
     isAuthenticated: false,
-    usersLoading: false, // NEW: Separate loading state for users fetch
+    token: localStorage.getItem('authToken') || null,
   },
   reducers: {
     clearError: (state) => {
@@ -171,40 +166,47 @@ const userSlice = createSlice({
     clearSuccess: (state) => {
       state.success = false;
     },
-    resetUserState: (state) => {
-      state.currentUser = null;
-      state.allUsers = [];
-      state.loading = false;
-      state.error = null;
-      state.success = false;
-      state.isAuthenticated = false;
-      state.usersLoading = false;
-    },
     logout: (state) => {
       state.currentUser = null;
       state.isAuthenticated = false;
       state.success = false;
+      state.token = null;
+      state.error = null;
+      localStorage.removeItem('authToken');
     },
-    // NEW: Manual setter for allUsers if needed
-    setAllUsers: (state, action) => {
-      state.allUsers = action.payload;
+    resetAuthState: (state) => {
+      state.currentUser = null;
+      state.loading = false;
+      state.error = null;
+      state.success = false;
+      state.isAuthenticated = false;
+      state.token = null;
+      localStorage.removeItem('authToken');
     },
   },
   extraReducers: (builder) => {
     builder
-      // Register User (unchanged)
+      // Register User
       .addCase(registerUser.pending, (state) => {
         state.loading = true;
         state.error = null;
         state.success = false;
+        console.log('🔄 Registration pending...');
       })
       .addCase(registerUser.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentUser = action.payload;
+        state.currentUser = action.payload.user;
+        state.token = action.payload.token;
         state.success = true;
         state.error = null;
         state.isAuthenticated = true;
-        console.log('Registration fulfilled:', action.payload);
+        
+        // Store token in localStorage
+        if (action.payload.token) {
+          localStorage.setItem('authToken', action.payload.token);
+        }
+        
+        console.log('✅ Registration completed successfully');
       })
       .addCase(registerUser.rejected, (state, action) => {
         state.loading = false;
@@ -212,25 +214,10 @@ const userSlice = createSlice({
         state.success = false;
         state.currentUser = null;
         state.isAuthenticated = false;
-        console.log('Registration rejected:', action.payload);
+        state.token = null;
+        console.log('❌ Registration failed:', action.payload);
       })
-      // Fetch All Users (NEW)
-      .addCase(fetchAllUsers.pending, (state) => {
-        state.usersLoading = true;
-        state.error = null;
-      })
-      .addCase(fetchAllUsers.fulfilled, (state, action) => {
-        state.usersLoading = false;
-        state.allUsers = action.payload;
-        state.error = null;
-        console.log('Users fetch fulfilled:', action.payload);
-      })
-      .addCase(fetchAllUsers.rejected, (state, action) => {
-        state.usersLoading = false;
-        state.error = action.payload;
-        console.log('Users fetch rejected:', action.payload);
-      })
-      // Login User (UPDATED)
+      // Login User
       .addCase(loginUser.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -238,11 +225,18 @@ const userSlice = createSlice({
       })
       .addCase(loginUser.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentUser = action.payload;
+        state.currentUser = action.payload.user;
+        state.token = action.payload.token;
         state.success = true;
         state.error = null;
         state.isAuthenticated = true;
-        console.log('Login fulfilled:', action.payload);
+        
+        // Store token in localStorage
+        if (action.payload.token) {
+          localStorage.setItem('authToken', action.payload.token);
+        }
+        
+        console.log('✅ Login completed successfully');
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.loading = false;
@@ -250,10 +244,21 @@ const userSlice = createSlice({
         state.success = false;
         state.currentUser = null;
         state.isAuthenticated = false;
-        console.log('Login rejected:', action.payload);
+        state.token = null;
+        console.log('❌ Login failed:', action.payload);
+      })
+      // Validate User
+      .addCase(validateUser.fulfilled, (state, action) => {
+        state.currentUser = action.payload.user;
+        state.isAuthenticated = true;
+      })
+      .addCase(validateUser.rejected, (state) => {
+        state.currentUser = null;
+        state.isAuthenticated = false;
+        state.token = null;
       });
   },
 });
 
-export const { clearError, clearSuccess, resetUserState, logout, setAllUsers } = userSlice.actions;
-export default userSlice.reducer;
+export const { clearError, clearSuccess, resetAuthState, logout } = authSlice.actions;
+export default authSlice.reducer;

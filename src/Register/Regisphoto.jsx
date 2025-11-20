@@ -55,7 +55,7 @@ const Regisphoto = () => {
   const cropperRef = useRef(null);
 
   // Get Redux state
-  const { loading, error, currentUser } = useSelector(state => state.user);
+  const { loading, error, currentUser } = useSelector(state => state.auth);
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
