@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useFormik } from "formik";
-import axios from "axios";
+import { useDispatch, useSelector } from "react-redux";
+import { loginUser, clearError } from "../Slice"; // Adjust import path as needed
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -26,13 +26,13 @@ const EyeClosedIcon = () => (
   </svg>
 );
 
-const API_BASE_URL = "http://192.168.0.196:5000/api";
-
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const dispatch = useDispatch();
+  const { loading, error, isAuthenticated } = useSelector((state) => state.auth);
+  
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState("");
 
   // If registration redirected with a flag, show toast
@@ -43,6 +43,22 @@ const Login = () => {
       window.history.replaceState({}, document.title);
     }
   }, [location]);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate("/home");
+    }
+  }, [isAuthenticated, navigate]);
+
+  // Handle Redux errors
+  useEffect(() => {
+    if (error) {
+      setServerError(error);
+      toast.error(error);
+      dispatch(clearError());
+    }
+  }, [error, dispatch]);
 
   const togglePasswordVisibility = () => setShowPassword((s) => !s);
 
@@ -59,50 +75,15 @@ const Login = () => {
     },
     onSubmit: async (values, { setSubmitting }) => {
       setServerError("");
-      setLoading(true);
       setSubmitting(true);
 
-      try {
-        // POST to backend login endpoint to validate credentials
-        const resp = await axios.post(
-          `${API_BASE_URL}/users/login`,
-          { email: values.email.trim(), password: values.password },
-          { timeout: 15000 }
-        );
+      // Use Redux action instead of direct axios call
+      const result = await dispatch(loginUser({
+        email: values.email.trim(),
+        password: values.password
+      }));
 
-        // Expect backend to return success flag / user data. Adapt if your backend differs.
-        if (resp?.status === 200 && (resp.data?.success || resp.data?.token || resp.data?.user)) {
-          toast.success("Login successful.");
-          // Optionally store token/localStorage here if backend returns token
-          if (resp.data.token) {
-            localStorage.setItem("authToken", resp.data.token);
-          } else if (resp.data.user) {
-            // minimal local store to simulate session if needed
-            localStorage.setItem("authUser", JSON.stringify(resp.data.user));
-          }
-
-          // Navigate to home page
-          navigate("/home");
-        } else {
-          // Backend responded but did not authenticate
-          const message = resp?.data?.message || "Invalid credentials.";
-          setServerError(message);
-          toast.error(message);
-        }
-      } catch (err) {
-        // If backend has a 401/400 response, show invalid credentials
-        const status = err?.response?.status;
-        const message =
-          err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          (status === 401 ? "Invalid credentials." : err.message || "Login failed.");
-
-        setServerError(message);
-        toast.error(message);
-      } finally {
-        setLoading(false);
-        setSubmitting(false);
-      }
+      setSubmitting(false);
     },
   });
 

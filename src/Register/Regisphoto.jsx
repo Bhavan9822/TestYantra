@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useFormik } from "formik";
-import axios from "axios";
+import { useDispatch, useSelector } from "react-redux";
+import { registerUser, clearError } from "../Slice"; // Adjust import path as needed
 import Cropper from "react-cropper";
 import "../Style.css";
 
@@ -39,8 +40,6 @@ const EyeClosedIcon = () => (
   </svg>
 );
 
-const API_BASE_URL = " http://192.168.0.196:5000/api";
-
 const Regisphoto = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const [showCropper, setShowCropper] = useState(false);
@@ -49,10 +48,10 @@ const Regisphoto = () => {
   const [showCpassword, setShowCpassword] = useState(false);
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [serverError, setServerError] = useState("");
-
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { loading, error, success } = useSelector((state) => state.auth);
+  
   const fileInputRef = useRef(null);
   const cropperRef = useRef(null);
 
@@ -60,11 +59,21 @@ const Regisphoto = () => {
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
   useEffect(() => {
-    if (registrationSuccess && !loading) {
-      const timer = setTimeout(() => navigate("/login"), 1500);
+    if (success) {
+      setRegistrationSuccess(true);
+      const timer = setTimeout(() => {
+        navigate("/login", { state: { registered: true } });
+      }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [registrationSuccess, loading, navigate]);
+  }, [success, navigate]);
+
+  useEffect(() => {
+    if (error) {
+      // Error is handled by Redux and will be displayed
+      dispatch(clearError());
+    }
+  }, [error, dispatch]);
 
   const togglePasswordVisibility = () => setShowPassword(!showPassword);
   const toggleCpasswordVisibility = () => setShowCpassword(!showCpassword);
@@ -90,47 +99,23 @@ const Regisphoto = () => {
       return errors;
     },
     onSubmit: async (values, { resetForm }) => {
-      setServerError("");
       setRegistrationSuccess(false);
 
       // Basic validation guard
       if (!values.username || !values.email || !values.password) {
-        setServerError("Please fill in all required fields.");
         return;
       }
 
-      setLoading(true);
-      try {
-        // Build FormData
-        const formData = new FormData();
-        formData.append("username", values.username);
-        formData.append("email", values.email);
-        formData.append("password", values.password);
-        if (values.profilePhoto) {
-          formData.append("profilePhoto", values.profilePhoto);
-        }
+      // Use Redux action instead of direct axios call
+      const result = await dispatch(registerUser({
+        username: values.username,
+        email: values.email,
+        password: values.password,
+        profilePhoto: values.profilePhoto
+      }));
 
-        console.log("Posting registration to server:", {
-          username: values.username,
-          email: values.email,
-          hasFile: !!values.profilePhoto,
-        });
-
-        const response = await axios.post(
-          `${API_BASE_URL}/users/register`,
-          formData,
-          {
-            headers: {
-              // Important: do NOT set 'Content-Type' manually for multipart/form-data
-            },
-            timeout: 15000,
-          }
-        );
-
-        console.log("Registration response:", response.data);
-        setRegistrationSuccess(true);
-
-        // Reset visual state and form
+      // If registration was successful, reset form
+      if (result.type === 'auth/register/fulfilled') {
         resetForm();
         if (fileInputRef.current) fileInputRef.current.value = "";
         if (imagePreview) {
@@ -139,16 +124,6 @@ const Regisphoto = () => {
         }
         setOriginalImage(null);
         setShowCropper(false);
-      } catch (err) {
-        console.error("Registration error:", err);
-        const msg =
-          err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          err?.message ||
-          "Registration failed. Please try again.";
-        setServerError(msg);
-      } finally {
-        setLoading(false);
       }
     },
   });
@@ -230,17 +205,20 @@ const Regisphoto = () => {
   };
 
   const handleInputFocus = () => {
-    if (serverError) setServerError("");
+    // Clear any server errors when user starts typing
+    if (error) {
+      dispatch(clearError());
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-300 to-purple-500 flex items-center justify-center p-6" id="bg">
       <div
-        className="w-full max-w-lg shadow-xl border border-white/30 rounded-2xl overflow-hidden relative"
+        className="w-full max-w-lg shadow-xl border border-white/50 rounded-2xl overflow-hidden relative"
         style={{
           background: "rgba(255, 255, 255, 0.1)",
           backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(30px)",
           boxShadow: "0 8px 32px 0 rgba(31, 38, 135, 0.37)",
         }}
       >
@@ -336,7 +314,7 @@ const Regisphoto = () => {
               </div>
             )}
 
-            {serverError && (
+            {error && (
               <div
                 className="mb-4 p-3 border border-red-200 rounded-lg"
                 style={{
@@ -349,10 +327,10 @@ const Regisphoto = () => {
                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
-                  <span className="font-medium">Registration Error:</span> {serverError}
+                  <span className="font-medium">Registration Error:</span> {error}
                 </p>
                 <p className="text-red-600 text-xs mt-1">
-                  {serverError.includes("Network") || serverError.includes("ERR_NETWORK")
+                  {error.includes("Network") || error.includes("ERR_NETWORK")
                     ? "Cannot connect to server. Please check if the backend is running on port 5000."
                     : "Please check your information and try again."}
                 </p>
@@ -609,7 +587,3 @@ const Regisphoto = () => {
 };
 
 export default Regisphoto;
-
-
-
-

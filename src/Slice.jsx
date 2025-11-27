@@ -2,7 +2,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://192.168.0.196:5000/api';
+const API_BASE_URL = 'http://192.168.0.66:5000/api';
 
 // Register user async thunk
 export const registerUser = createAsyncThunk(
@@ -196,7 +196,7 @@ const authSlice = createSlice({
       })
       .addCase(registerUser.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentUser = action.payload.user;
+        state.currentUser = action.payload.user; 
         state.token = action.payload.token;
         state.success = true;
         state.error = null;
@@ -226,7 +226,7 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.fulfilled, (state, action) => {
         state.loading = false;
-        state.currentUser = action.payload.user;
+        state.currentUser = action.payload.user; // 
         state.token = action.payload.token;
         state.success = true;
         state.error = null;
