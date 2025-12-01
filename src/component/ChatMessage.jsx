@@ -1,8 +1,11 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useSelector } from 'react-redux'
 
 const ChatMessage = () => {
     let navigate = useNavigate();
+    const { currentUser } = useSelector((state) => state.auth || {});
+    const userPhoto = currentUser?.profilePhotoUrl || currentUser?.profilePhoto || 'https://randomuser.me/api/portraits/lego/1.jpg';
   return <>
     <main className="w-full overflow-scroll relative top-0 bg-gradient-to-b from-[rgb(151,222,246)] to-[rgb(210,137,228)] flex" id='main'>
         <nav id='nav' className="fixed z-[1000] w-full h-[10vh] flex bg-white rounded-[5px] shadow-[rgba(0,0,0,0.45)_0px_25px_20px_-20px]">
@@ -84,7 +87,7 @@ const ChatMessage = () => {
     {/* <!-- Chat Header with Gradient --> */}
     <div class="bg-gradient-to-r from-[rgb(88,205,244)] to-[rgb(170,77,194)] shadow-lg p-5 flex items-center justify-between text-white">
       <div class="flex items-center space-x-4">
-        <img src="https://randomuser.me/api/portraits/women/44.jpg" class="w-12 h-12 rounded-full ring-4 ring-white online"/>
+      <img src={userPhoto} class="w-12 h-12 rounded-full ring-4 ring-white online"/>
         <div>
           <h2 class="font-bold text-lg">Dianne Jhonson</h2>
           <p class="text-sm opacity-90 text-green-700">Online</p>

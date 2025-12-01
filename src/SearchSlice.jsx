@@ -2,7 +2,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://192.168.0.66:5000/api';
+const API_BASE_URL = 'https://robo-1-qqhu.onrender.com/api';
 
 // Search users async thunk
 export const searchUsers = createAsyncThunk(
