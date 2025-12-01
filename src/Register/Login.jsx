@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useFormik } from "formik";
 import { useDispatch, useSelector } from "react-redux";
-import { loginUser, clearError } from "../Slice"; // Adjust import path as needed
+import { loginUser, clearError } from "../Slice";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
@@ -33,32 +34,30 @@ const Login = () => {
   const { loading, error, isAuthenticated } = useSelector((state) => state.auth);
   
   const [showPassword, setShowPassword] = useState(false);
-  const [serverError, setServerError] = useState("");
 
   // If registration redirected with a flag, show toast
   useEffect(() => {
-    if (location.state && location.state.registered) {
-      toast.success("Registration successful. Please login.");
-      // clear the state so toast not shown again on refresh
+    if (location.state?.registered) {
+      toast.success("Registration successful! Please login.");
+      // Clear the state so toast not shown again on refresh
       window.history.replaceState({}, document.title);
     }
   }, [location]);
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate("/home");
-    }
-  }, [isAuthenticated, navigate]);
+  if (isAuthenticated && !location.state?.registered) {
+    // Only redirect to home if NOT coming from registration
+    navigate("/home");
+  }
+}, [isAuthenticated, navigate, location.state]);
 
   // Handle Redux errors
   useEffect(() => {
     if (error) {
-      setServerError(error);
       toast.error(error);
-      dispatch(clearError());
     }
-  }, [error, dispatch]);
+  }, [error]);
 
   const togglePasswordVisibility = () => setShowPassword((s) => !s);
 
@@ -73,27 +72,30 @@ const Login = () => {
       if (!values.password) errors.password = "Password is required.";
       return errors;
     },
-    onSubmit: async (values, { setSubmitting }) => {
-      setServerError("");
-      setSubmitting(true);
+    onSubmit: async (values) => {
+      const result = await dispatch(
+        loginUser({ 
+          email: values.email.trim(), 
+          password: values.password 
+        })
+      );
 
-      // Use Redux action instead of direct axios call
-      const result = await dispatch(loginUser({
-        email: values.email.trim(),
-        password: values.password
-      }));
-
-      setSubmitting(false);
+      if (loginUser.fulfilled.match(result)) {
+        toast.success("Login successful!");
+        navigate("/home");
+      }
     },
   });
 
   const handleInputFocus = () => {
-    if (serverError) setServerError("");
+    if (error) {
+      dispatch(clearError());
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6" id="logbg">
-      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnHover draggable pauseOnFocusLoss />
+      <ToastContainer position="top-right" autoClose={3000} />
       <div
         className="w-full max-w-md shadow-xl border border-white/30 rounded-2xl overflow-hidden relative"
         style={{
@@ -119,17 +121,6 @@ const Login = () => {
           </div>
 
           <div className="p-8">
-            {serverError && (
-              <div className="mb-4 p-3 border border-red-200 rounded-lg" style={{ background: "rgba(254, 242, 242, 0.8)", backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" }}>
-                <p className="text-red-700 text-sm flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  <span className="font-medium">Login Error:</span> {serverError}
-                </p>
-              </div>
-            )}
-
             <form onSubmit={formik.handleSubmit} noValidate>
               <div className="mb-5">
                 <label className="block text-lg font-semibold mb-3 text-white">Email Address</label>
@@ -234,7 +225,7 @@ const Login = () => {
             <div className="text-center space-y-3">
               <div className="text-sm text-white">
                 Don't have an account?{" "}
-                <button type="button" onClick={() => navigate("/register")} className="text-blue-800 font-semibold hover:underline transition-colors hover:text-blue-900">
+                <button type="button" onClick={() => navigate("/")} className="text-blue-800 font-semibold hover:underline transition-colors hover:text-blue-900">
                   Register here
                 </button>
               </div>
