@@ -1,23 +1,75 @@
 // Articles.jsx
-import React, { useEffect } from 'react'
+import React, { useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { fetchPosts, fetchPostById } from '../ArticlesSlice'
+import { selectArticleLikes, optimisticToggleLike, addLike, removeLike } from '../LikeSlice'
+import { addLikeNotification } from '../NotificationSlice' // Import notification action
 import { useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { formatTime } from '../FormatTime'
+import NotificationBell from './NotificationBell'
 
 const Articles = () => {
   let navigate = useNavigate();
   const dispatch = useDispatch();
   const { currentUser } = useSelector((state) => state.auth);
-  
+  const defaultImage = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face";
+
+  // Enhanced image helper function (declare before use to avoid TDZ)
+  const getImageSrc = useCallback((photo) => {
+    if (!photo) return defaultImage;
+
+    if (typeof photo === 'string') {
+      const s = photo.trim();
+      if (!s) return defaultImage;
+
+      if (s.startsWith('data:image/')) return s;
+      if (s.startsWith('http') || s.startsWith('blob:') || s.startsWith('/')) return s;
+
+      // If it's a Base64 string without data URL prefix
+      const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+      const cleanPhoto = s.replace(/\s/g, '');
+      if (cleanPhoto.length > 100 && base64Regex.test(cleanPhoto)) {
+        return `data:image/jpeg;base64,${cleanPhoto}`;
+      }
+
+      // Last resort: return as-is (handles relative server paths)
+      return s;
+    }
+
+    // If photo is an object (from database)
+    try {
+      if (photo.data && (photo.data instanceof Uint8Array || Array.isArray(photo.data))) {
+        const bytes = photo.data;
+        const uint8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+        const binary = uint8.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+        const b64 = btoa(binary);
+        return `data:image/jpeg;base64,${b64}`;
+      }
+    } catch (e) {
+      console.warn('Failed to process image object:', e);
+    }
+
+    return defaultImage;
+  }, []);
+
+  // Derive a robust current user photo similar to Home.jsx
+  const userPhoto = useMemo(() => getImageSrc(
+    currentUser?.profilePhoto ||
+    currentUser?.profilePhotoUrl ||
+    currentUser?.avatar ||
+    currentUser?.image ||
+    currentUser?.picture ||
+    currentUser?.profilePic
+  ), [currentUser, getImageSrc]);
   
   const { posts = [], loading = false, error = null } = useSelector((state) => state.articles || {});
   
   const location = useLocation();
   const newPostFromNav = location?.state?.newPost;
   const [fetchedNewPost, setFetchedNewPost] = useState(null);
+  const [selectedPostId, setSelectedPostId] = useState(null);
 
   useEffect(() => {
     console.log('Articles: Fetching posts on mount');
@@ -61,51 +113,18 @@ const Articles = () => {
     return () => { mounted = false };
   }, [dispatch, newPostFromNav]);
 
-  // Enhanced image helper function
-  const getImageSrc = (photo) => {
-    const defaultImage = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face";
-    
-    if (!photo) return defaultImage;
+  // When a post is selected (via click), navigate in an effect
+  useEffect(() => {
+    if (!selectedPostId) return;
 
-    if (typeof photo === 'string') {
-      if (photo.startsWith('data:image/')) {
-        return photo;
-      }
-      
-      // If it's a Base64 string without data URL prefix
-      const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-      const cleanPhoto = photo.replace(/\s/g, '');
-      
-      if (cleanPhoto.length > 100 && base64Regex.test(cleanPhoto)) {
-        return `data:image/jpeg;base64,${cleanPhoto}`;
-      }
-      
-      // If it's a URL
-      if (photo.startsWith('http')) {
-        return photo;
-      }
-      
-      return defaultImage;
-    }
+    // perform navigation and then clear the selection
+    navigate(`/indarticle/${selectedPostId}`);
+    setSelectedPostId(null);
+  }, [selectedPostId, navigate]);
 
-    // If photo is an object (from database)
-    try {
-      if (photo.data && (photo.data instanceof Uint8Array || Array.isArray(photo.data))) {
-        const bytes = photo.data;
-        const uint8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
-        const binary = uint8.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
-        const b64 = btoa(binary);
-        return `data:image/jpeg;base64,${b64}`;
-      }
-    } catch (e) {
-      console.warn('Failed to process image object:', e);
-    }
-
-    return defaultImage;
-  };
 
   // Enhanced helper to get user data from post with better debugging
-  const getUserFromPost = (post) => {
+  const getUserFromPost = useCallback((post) => {
     console.log('Post user data structure:', {
       postId: post._id || post.id,
       user: post.user,
@@ -140,15 +159,24 @@ const Articles = () => {
 
     // If no user object found, return empty object
     return {};
-  };
+  }, []);
+
+  // Helper to get article owner ID
+  const getArticleOwnerId = useCallback((post) => {
+    const user = getUserFromPost(post);
+    if (!user) return null;
+    
+    if (typeof user === 'string') return user;
+    return user._id || user.id || user.userId || null;
+  }, [getUserFromPost]);
 
   // Enhanced helper to get user's display name with multiple fallbacks
-  const getUserDisplayName = (post) => {
+  const getUserDisplayName = useCallback((post) => {
     const user = getUserFromPost(post);
     
     console.log('User object for display name:', user);
 
-  const userName = currentUser?.username || "User";
+    const userName = currentUser?.username || "User";
     // Try multiple possible username fields
     const username = `${userName}` || user.name || user.fullName || user.displayName || user.email;
     
@@ -163,19 +191,89 @@ const Articles = () => {
 
     // Final fallback
     return 'Community Member';
-  };
+  }, [currentUser, getUserFromPost]);
 
   // Enhanced helper to get user's profile photo
-  const getUserProfilePhoto = (post) => {
+  const getUserProfilePhoto = useCallback((post) => {
     const user = getUserFromPost(post);
     return getImageSrc(user.profilePhoto || user.profilePhotoUrl || user.avatar || user.image || user.picture);
-  };
+  }, [getUserFromPost, getImageSrc]);
 
   // Combine posts for display
   const topPost = fetchedNewPost || newPostFromNav || null;
-  const combinedPosts = topPost
-    ? [topPost, ...posts.filter(p => (p._id || p.id) !== (topPost._id || topPost.id))]
-    : posts;
+  const combinedPosts = useMemo(() => 
+    topPost
+      ? [topPost, ...posts.filter(p => (p._id || p.id) !== (topPost._id || topPost.id))]
+      : posts,
+    [topPost, posts]
+  );
+
+  // Select the raw articleLikes map from Redux (stable reference when unchanged)
+  const articleLikesMap = useSelector((state) => state.likes?.articleLikes || {});
+  const likeOperations = useSelector((state) => state.likes?.likeOperations || {});
+
+  // Build likeStates for the combined posts using memoization so we don't
+  // create a new object on every render and cause extra re-renders.
+  const likeStates = useMemo(() => {
+    const map = {};
+    combinedPosts.forEach(p => {
+      const id = p._id || p.id;
+      map[id] = articleLikesMap[id] || { likes: [], count: p.likes?.length || 0, isLikedByUser: false };
+    });
+    return map;
+  }, [combinedPosts, articleLikesMap]);
+
+  // Handler to toggle like for an article from the Articles list
+  const handleToggleLike = useCallback(async (e, post) => {
+    e.stopPropagation();
+    if (!currentUser?._id) {
+      navigate('/login');
+      return;
+    }
+
+    const postId = post._id || post.id;
+    const articleOwnerId = getArticleOwnerId(post);
+    const isOwnArticle = articleOwnerId === currentUser._id;
+    const currentLikes = articleLikesMap[postId]?.likes || post.likes || [];
+    const currentlyLiked = (articleLikesMap[postId]?.isLikedByUser) || 
+      (Array.isArray(currentLikes) && currentLikes.some(l => 
+        (typeof l === 'string' ? l === currentUser._id : 
+        (l.userId === currentUser._id || l._id === currentUser._id || l.id === currentUser._id))
+      ));
+
+    // Optimistic update in the likes slice
+    dispatch(optimisticToggleLike({ articleId: postId, userId: currentUser._id, currentLikes }));
+
+    try {
+      if (currentlyLiked) {
+        const res = await dispatch(removeLike({ 
+          articleId: postId, 
+          userId: currentUser._id 
+        }));
+        // No notification for unliking
+      } else {
+        const res = await dispatch(addLike({ 
+          articleId: postId, 
+          userId: currentUser._id,
+          articleOwnerId: articleOwnerId,
+          articleTitle: post.title || 'Your article',
+          currentUserName: currentUser.username || currentUser.name || 'Someone'
+        }));
+        
+        // Create notification only if liking someone else's article
+        if (!isOwnArticle && res.payload?._shouldCreateNotification) {
+          dispatch(addLikeNotification({
+            actor: currentUser._id,
+            targetId: postId,
+            actorName: currentUser.username || currentUser.name || 'Someone',
+            articleTitle: post.title || 'Your article'
+          }));
+        }
+      }
+    } catch (err) {
+      console.error('Articles: like/unlike error', err);
+    }
+  }, [dispatch, navigate, currentUser, articleLikesMap, getArticleOwnerId]);
 
   // Debug: Log the first post to see its structure
   useEffect(() => {
@@ -184,7 +282,7 @@ const Articles = () => {
       console.log('User from first post:', getUserFromPost(posts[0]));
       console.log('Display name from first post:', getUserDisplayName(posts[0]));
     }
-  }, [posts]);
+  }, [posts, getUserFromPost, getUserDisplayName]);
 
   return (
     <main className="w-full overflow-scroll relative top-0 bg-gradient-to-b from-[rgb(151,222,246)] to-[rgb(210,137,228)]" id='main'>
@@ -199,11 +297,19 @@ const Articles = () => {
           <i className="fa-solid fa-magnifying-glass relative top-[10px] right-[30px] h-[35px] w-[45px] rounded-tr-[10px] rounded-br-[10px] grid place-items-center text-black "></i>
         </aside>
         <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
-          <div className="flex gap-[35px] pr-[45px] nav_div">
+            <div className="flex gap-[35px] pr-[45px] nav_div">
             <div className='nav_icons'><i className="fa-regular fa-house text-[25px] text-black" onClick={()=>navigate("/home")}></i></div>
             <div className='nav_icons'><i className="fa-regular fa-square-plus text-[25px] text-black" onClick={()=>navigate('/articles')}></i></div>
-            <div className='nav_icons'><i className="fa-regular fa-bell text-[25px] text-black" onClick={()=>{navigate("/notification")}}></i></div>
-            <div className='nav_icons'><i className="fa-regular fa-circle-user text-[25px] text-black"></i></div>
+            <NotificationBell />
+            <div className='nav_icons'>
+              <img
+                src={userPhoto}
+                alt="User"
+                className="w-[30px] h-[30px] rounded-full object-cover border border-gray-400 cursor-pointer"
+                onClick={() => navigate('/profile')}
+                onError={(e) => { e.target.onerror = null; e.target.src = getImageSrc(null); }}
+              />
+            </div>
             <div id='theme' className="border-2 border-black flex justify-center items-center h-[25px] w-[25px] rounded-full">
               <i className="fa-regular fa-moon text-[16px] text-black"></i>
             </div>
@@ -265,12 +371,14 @@ const Articles = () => {
               const userDisplayName = getUserDisplayName(post);
               const userProfilePhoto = getUserProfilePhoto(post);
               const userInitials = userDisplayName.slice(0, 2).toUpperCase();
+              const postId = post._id || post.id;
+              const likeState = likeStates[postId] || {};
               
               return (
                 <div 
-                  key={post._id || post.id} 
+                  key={postId} 
                   className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer border border-gray-200"
-                  onClick={() => navigate(`/indarticle/${post._id || post.id}`)}
+                  onClick={() => setSelectedPostId(postId)}
                 >
                   {/* Article Header with Gradient */}
                   <div className="h-48 bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 relative overflow-hidden">
@@ -293,13 +401,10 @@ const Articles = () => {
                       <div className="flex items-center space-x-3">
                         <div className="relative">
                           <img 
-                            src={userProfilePhoto}
+                            src={userProfilePhoto || userPhoto || defaultImage}
                             alt={userDisplayName}
                             className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              e.target.nextSibling.style.display = 'flex';
-                            }}
+                            onError={(e) => { e.target.onerror = null; e.target.src = userPhoto || defaultImage; }}
                           />
                           <div 
                             className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-medium text-xs border-2 border-white shadow-sm"
@@ -319,12 +424,26 @@ const Articles = () => {
                       {/* Engagement Stats */}
                       <div className="flex items-center space-x-3 text-gray-500">
                         <div className="flex items-center space-x-1 text-sm">
-                          <i className="far fa-heart"></i>
-                          <span>{post.likes?.length || 0}</span>
+                          <button
+                            onClick={(e) => handleToggleLike(e, post)}
+                            disabled={!currentUser?._id || Boolean(likeOperations[postId])}
+                            className={`flex items-center gap-1 text-sm focus:outline-none transition-colors ${
+                              likeState.isLikedByUser ? 'text-red-500' : 'text-gray-500 hover:text-red-500'
+                            } ${likeOperations[postId] ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                          >
+                            {likeOperations[postId] ? (
+                              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                            ) : (
+                              <i className={`fa${likeState.isLikedByUser ? '-solid' : '-regular'} fa-heart`}></i>
+                            )}
+                          </button>
+                          <span className={likeState.isLikedByUser ? 'text-red-500 font-medium' : 'text-gray-600'}>
+                            {likeState.count || post.likes?.length || 0}
+                          </span>
                         </div>
                         <div className="flex items-center space-x-1 text-sm">
-                          <i className="far fa-comment"></i>
-                          <span>{post.comments?.length || 0}</span>
+                          <i className="far fa-comment text-gray-500"></i>
+                          <span className="text-gray-600">{post.comments?.length || 0}</span>
                         </div>
                       </div>
                     </div>

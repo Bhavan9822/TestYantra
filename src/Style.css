@@ -408,8 +408,7 @@
   align-items: center;
 
 }
-.nav_icons:hover{
-  /* border: 2px solid red; */
+/* .nav_icons:hover{
   border-radius: 50%;
   cursor: pointer;
   height: 43px;
@@ -424,7 +423,8 @@
 .nav_icons>i:hover{
   color: white;
   font-size: 25px;
-}
+} */
+ 
 #check{
   /* border: 2px solid red; */
   margin-top: 78px;
@@ -455,4 +455,3 @@
   /* border: 2px solid blue; */
   width: fit-content;
 }
-  
