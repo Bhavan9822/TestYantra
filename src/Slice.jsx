@@ -803,7 +803,8 @@ export const registerUser = createAsyncThunk(
 
       const response = await api.post('/users/register', payload, {
         headers: {
-          'Content-Type': 'application/json',
+          // 'Content-Type': 'application/formdata',
+          'Content-Type': 'multipart/form-data',
         }
       });
 

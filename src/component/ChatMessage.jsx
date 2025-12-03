@@ -1,11 +1,47 @@
-import React from 'react'
+import React, { useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSelector } from 'react-redux'
+import NotificationBell from './NotificationBell'
 
 const ChatMessage = () => {
     let navigate = useNavigate();
     const { currentUser } = useSelector((state) => state.auth || {});
-    const userPhoto = currentUser?.profilePhotoUrl || currentUser?.profilePhoto || 'https://randomuser.me/api/portraits/lego/1.jpg';
+
+    const defaultAvatar = 'https://randomuser.me/api/portraits/lego/1.jpg';
+
+    const getImageSrc = useCallback((photo) => {
+      if (!photo) return defaultAvatar;
+      if (typeof photo === 'string') {
+        if (photo.startsWith('data:image/')) return photo;
+        if (photo.startsWith('http')) return photo;
+        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+        const cleanPhoto = photo.replace(/\s/g, '');
+        if (cleanPhoto.length > 100 && base64Regex.test(cleanPhoto)) return `data:image/jpeg;base64,${cleanPhoto}`;
+        return defaultAvatar;
+      }
+      try {
+        if (photo.data && (photo.data instanceof Uint8Array || Array.isArray(photo.data))) {
+          const bytes = photo.data;
+          const uint8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+          const binary = uint8.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+          const b64 = btoa(binary);
+          return `data:image/jpeg;base64,${b64}`;
+        }
+      } catch (e) {
+        console.warn('Failed to process image object:', e);
+      }
+      return defaultAvatar;
+    }, []);
+
+    const userPhoto = useMemo(() => getImageSrc(
+      currentUser?.profilePhoto ||
+      currentUser?.profilePhotoUrl ||
+      currentUser?.avatar ||
+      currentUser?.image ||
+      currentUser?.picture ||
+      currentUser?.profilePic ||
+      currentUser?.photoURL
+    ), [currentUser, getImageSrc]);
   return <>
     <main className="w-full overflow-scroll relative top-0 bg-gradient-to-b from-[rgb(151,222,246)] to-[rgb(210,137,228)] flex" id='main'>
         <nav id='nav' className="fixed z-[1000] w-full h-[10vh] flex bg-white rounded-[5px] shadow-[rgba(0,0,0,0.45)_0px_25px_20px_-20px]">
@@ -19,11 +55,19 @@ const ChatMessage = () => {
             <i className="fa-solid fa-magnifying-glass relative top-[10px] right-[30px] h-[35px] w-[45px] rounded-tr-[10px] rounded-br-[10px] grid place-items-center text-black "></i>
           </aside>
           <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
-            <div className="flex gap-[35px] pr-[45px] nav_div">
+              <div className="flex gap-[35px] pr-[45px] nav_div">
               <div className='nav_icons'><i className="fa-regular fa-house text-[25px] text-black" onClick={()=>navigate('/home')}></i></div>
               <div className='nav_icons'><i className="fa-regular fa-square-plus text-[25px] text-black" onClick={()=>navigate("/articles")}></i></div>
-              <div className='nav_icons'><i className="fa-regular fa-bell text-[25px] text-black" onClick={()=>{navigate("/notification")}}></i></div> 
-              <div className='nav_icons'><i className="fa-regular fa-circle-user text-[25px] text-black"></i></div>
+              <NotificationBell />
+              <div className='nav_icons'>
+                <img
+                  src={userPhoto}
+                  alt="User"
+                  className="w-[25px] h-[25px] rounded-full object-cover border border-gray-400 cursor-pointer"
+                  onClick={() => navigate('/profile')}
+                  onError={(e) => { e.target.onerror = null; e.target.src = defaultAvatar; }}
+                />
+              </div>
               <div id='theme' className="border-2 border-black flex justify-center items-center h-[25px] w-[25px] rounded-full">
                 <i className="fa-regular fa-moon text-[16px] text-black"></i>
               </div>
