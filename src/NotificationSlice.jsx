@@ -75,6 +75,24 @@ const notificationSlice = createSlice({
         console.warn('Failed to save notifications to localStorage:', e);
       }
     },
+
+    // Add notification for follow request received
+    addFollowRequestNotification: (state, action) => {
+      const { actor, requestId, message } = action.payload;
+      const notification = {
+        id: Date.now().toString(),
+        type: 'follow_request',
+        actor,
+        requestId: requestId || null,
+        message: message || `${actor?.username || actor?.name || 'Someone'} requested to follow you`,
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+      state.items.unshift(notification);
+      state.unreadCount += 1;
+
+      try { localStorage.setItem('notifications', JSON.stringify(state.items)); } catch (e) { console.warn('Failed to save notifications to localStorage:', e); }
+    },
     
     // Mark notification as read
     markAsRead: (state, action) => {
@@ -150,6 +168,7 @@ export const {
   loadNotificationsFromStorage,
   addLikeNotification,
   addCommentNotification,
+  addFollowRequestNotification,
   markAsRead,
   markAllAsRead,
   deleteNotification,

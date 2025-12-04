@@ -14,8 +14,11 @@ import {
   setLocalSearchResult,
   sendFriendRequestLocal
 } from '../SearchSlice';
+import { sendFollowRequest, followRequestReceived as followRequestReceivedAction } from '../usersSlice';
 import { sendFollowByUsername } from '../FollowSendSlice';
 import NotificationBell from '../component/NotificationBell';
+import { connectSocket, on as socketOn, joinRoom } from '../socket';
+import { addFollowRequestNotification } from '../NotificationSlice';
 import { createPost, fetchPosts } from '../ArticlesSlice';
 import { toggleLike, optimisticToggleLike, selectArticleLikes, selectIsLiking } from '../LikeSlice';
 import { addLikeNotification } from '../NotificationSlice';
@@ -54,6 +57,7 @@ const Home = () => {
   }, [posts, articleLikesMap]);
 
   const searchRef = useRef(null);
+  const navInputRef = useRef(null);
   const chatContainerRef = useRef(null);
   
   const defaultImage = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnnA_0pG5u9vFP1v9a2DKaqVMCEL_0-FXjkduD2ZzgSm14wJy-tcGygo_HZX_2bzMHF8I&usqp=CAU";
@@ -131,17 +135,78 @@ const Home = () => {
     console.log('Home: Fetching friends and posts');
     dispatch(getFriends());
     dispatch(fetchPosts());
+
+    // Ensure socket connection and listen for incoming follow requests
+    try {
+      const token = localStorage.getItem('authToken');
+      connectSocket(token);
+      // Join the user's personal room so server can emit direct events
+      const userId = currentUser?._id || currentUser?.id;
+      if (userId) {
+        joinRoom(`user:${userId}`).catch((err) => console.warn('joinRoom failed', err));
+      }
+
+      const off = socketOn('followRequestReceived', (payload) => {
+        try {
+          console.log('Received followRequestReceived via socket:', payload);
+          // payload expected to contain { actor, requestId, message }
+          dispatch(addFollowRequestNotification(payload));
+          // update users state so UI reflects incoming request
+          try { dispatch(followRequestReceivedAction(payload)); } catch (e) {}
+        } catch (e) {
+          console.warn('Error handling followRequestReceived', e);
+        }
+      });
+
+      return () => {
+        try { if (off) off(); } catch (e) {}
+      };
+    } catch (e) {
+      // ignore socket errors here
+    }
   }, [dispatch]);
 
   useEffect(() => {
+    // Auto-focus the navbar search input when the Home component mounts
+    try {
+      if (navInputRef.current && typeof navInputRef.current.focus === 'function') {
+        navInputRef.current.focus();
+      }
+    } catch (e) {
+      // ignore focus errors
+    }
+
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
         dispatch(closeSearchResults());
       }
     };
 
+    // Keyboard shortcut: press '/' to focus the navbar search input
+    const handleKeyDown = (e) => {
+      // Ignore when user is already typing in an input/textarea or using modifier keys
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        if (navInputRef.current) {
+          navInputRef.current.focus();
+          navInputRef.current.select && navInputRef.current.select();
+        }
+      }
+
+      // Escape should close search results and blur the input
+      if (e.key === 'Escape') {
+        dispatch(closeSearchResults());
+        if (navInputRef.current) navInputRef.current.blur();
+      }
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [dispatch]);
 
   useEffect(() => {
@@ -315,11 +380,26 @@ const Home = () => {
       return;
     }
 
-    const result = await dispatch(sendFriendRequest(userId));
-    if (result.type === 'search/sendFriendRequest/fulfilled') {
-      alert('Follow request sent');
-    } else {
-      if (result.payload) alert(result.payload);
+    // Prefer the users slice sendFollowRequest thunk to create a follow request
+    try {
+      const res = await dispatch(sendFollowRequest(userId));
+      if (res && res.type && res.type.endsWith('/fulfilled')) {
+        // Update search UI to show 'requested'
+        dispatch(sendFriendRequestLocal(userId));
+        alert('Follow request sent');
+        return;
+      }
+
+      // Fallback to existing search/sendFriendRequest
+      const result = await dispatch(sendFriendRequest(userId));
+      if (result.type === 'search/sendFriendRequest/fulfilled') {
+        alert('Follow request sent');
+      } else {
+        if (result.payload) alert(result.payload);
+      }
+    } catch (e) {
+      console.error('handleFriendRequest error', e);
+      alert('Failed to send follow request');
     }
   }, [dispatch]);
 
@@ -542,7 +622,7 @@ const Home = () => {
 
   const getUserProfilePhoto = useCallback((post) => {
     const user = getUserFromPost(post);
-    return getImageSrc(user.profilePhoto || user.profilePhotoUrl || user.avatar || user.image || user.picture);
+    return getImageSrc( `${userProfilePhoto}` || user.profilePhotoUrl || user.avatar || user.image || user.picture);
   }, [getUserFromPost, getImageSrc]);
 
   const getCommentUser = useCallback((comment) => {
@@ -559,7 +639,7 @@ const Home = () => {
 
   const getCommentUserPhoto = useCallback((comment) => {
     const user = getCommentUser(comment);
-    return getImageSrc(user.profilePhoto || user.profilePhotoUrl || user.avatar || user.image);
+    return getImageSrc(`${userProfilePhoto}` || user.profilePhotoUrl || user.avatar || user.image);
   }, [getCommentUser, getImageSrc]);
 
   // Memoize posts data to prevent unnecessary re-renders
@@ -603,7 +683,52 @@ const Home = () => {
                 placeholder='Search users...' 
                 className="border-2 border-black h-[40px] w-[30vw] rounded-[10px] pl-[15px] text-black"
                 value={searchQuery}
+                ref={navInputRef}
+                autoComplete="off"
                 onChange={(e) => handleSearch(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+
+                    // If there is exactly one search result, send a follow request to it
+                    if (Array.isArray(searchResults) && searchResults.length === 1) {
+                      const u = searchResults[0];
+                      handleFriendRequest(u._id);
+                      return;
+                    }
+
+                    // If there are no results but the user typed a non-empty query,
+                    // attempt to resolve the username on the server and send a follow request
+                    const q = (searchQuery || '').trim();
+                    if (q && (!Array.isArray(searchResults) || searchResults.length === 0)) {
+                      try {
+                        const res = await dispatch(sendFollowByUsername(q));
+                        if (res && res.type && res.type.endsWith('/fulfilled')) {
+                          // success
+                          alert('Follow request sent');
+                          setSearchQuery('');
+                          dispatch(clearSearchResults());
+                        } else {
+                          const payload = res.payload || res.error || 'Unable to send follow request';
+                          alert(typeof payload === 'string' ? payload : JSON.stringify(payload));
+                        }
+                      } catch (err) {
+                        console.error('Error sending follow by username:', err);
+                        alert('Failed to send follow request.');
+                      }
+                      return;
+                    }
+
+                    // Fallback: run a search (onChange already does this)
+                    handleSearch(searchQuery);
+                  }
+                }}
+                onFocus={() => {
+                  // show previous results if any when focusing
+                  if ((searchRef.current && searchRef.current.contains(document.activeElement)) === false) {
+                    // noop: keeping for potential future behavior
+                  }
+                }}
               />
               <i className="fa-solid fa-magnifying-glass absolute right-3 top-1/2 transform -translate-y-1/2 text-black"></i>
               
@@ -613,10 +738,10 @@ const Home = () => {
                     <div key={user._id} className="p-3 border-b border-gray-200 hover:bg-gray-50 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <img 
-                          src={getImageSrc(user.profilePhotoUrl || user.profilePhoto)} 
+                          src={getImageSrc(user.profilePhotoUrl || user.profilePhoto || user.avatar || user.image || user.picture)} 
                           alt={user.username}
                           className="w-8 h-8 rounded-full object-cover"
-                          onError={(e) => e.target.src = defaultImage}
+                          onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
                         />
                         <div>
                           <p className="font-semibold">{user.username}</p>
@@ -653,7 +778,7 @@ const Home = () => {
               <NotificationBell />
               <div className='nav_icons'>
                 <img 
-                  src={userProfilePhoto} 
+                  src={`${userProfilePhoto}`} 
                   alt="User Profile" 
                   className="w-[30px] h-[30px] rounded-full object-cover border border-gray-400"
                   onClick={()=>navigate('/profile')}

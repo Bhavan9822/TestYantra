@@ -8,6 +8,7 @@ import { registerUser, clearError } from "../Slice";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Cropper from "react-cropper";
+import imageCompression from 'browser-image-compression';
 import "../Style.css";
 
 // Icons (using Heroicons) - Keep all your existing icons
@@ -135,7 +136,7 @@ const Regisphoto = () => {
     },
   });
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -154,12 +155,26 @@ const Regisphoto = () => {
       return;
     }
 
+    // Compress the image before showing cropper to reduce upload size
+    let compressedFile = file;
+    try {
+      const options = {
+        maxSizeMB: 0.4,
+        maxWidthOrHeight: 1024,
+        useWebWorker: true,
+      };
+      compressedFile = await imageCompression(file, options);
+    } catch (err) {
+      console.warn('Image compression failed, using original file', err);
+      compressedFile = file;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       setOriginalImage(event.target.result);
       setShowCropper(true);
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(compressedFile);
   };
 
   const handleCrop = () => {
@@ -179,15 +194,52 @@ const Regisphoto = () => {
         return;
       }
 
-      // Convert canvas to Base64 data URL directly
-      const base64Data = canvas.toDataURL("image/png", 0.95);
-      
-      // Set the Base64 string directly as profilePhoto
-      setImagePreview(base64Data);
-      formik.setFieldValue("profilePhoto", base64Data);
-      formik.setFieldError("profilePhoto", undefined);
-      setShowCropper(false);
-      toast.success("Profile photo ready!");
+      // Convert canvas to Blob, compress it, then store as a File so backend receives multipart/form-data
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          console.error('Canvas toBlob produced null');
+          toast.error('Failed to produce image blob');
+          return;
+        }
+
+        try {
+          // Compress the cropped blob to reduce payload
+          const options = {
+            maxSizeMB: 0.8,
+            maxWidthOrHeight: 800,
+            useWebWorker: true,
+          };
+          const compressedBlob = await imageCompression(blob, options);
+
+          // Create a File from the blob so FormData can be used
+          const fileName = `profile_${Date.now()}.png`;
+          const file = new File([compressedBlob], fileName, { type: compressedBlob.type || 'image/png' });
+
+          // Update preview using an object URL (more efficient than base64)
+          try { if (imagePreview) URL.revokeObjectURL(imagePreview); } catch {}
+          const objectUrl = URL.createObjectURL(file);
+          setImagePreview(objectUrl);
+
+          formik.setFieldValue("profilePhoto", file);
+          formik.setFieldError("profilePhoto", undefined);
+          setShowCropper(false);
+          toast.success("Profile photo ready!");
+        } catch (err) {
+          console.warn('Error compressing cropped image, falling back to base64', err);
+          // Fallback: use base64 (less ideal but ensures functionality)
+          try {
+            const base64Data = canvas.toDataURL('image/png', 0.9);
+            setImagePreview(base64Data);
+            formik.setFieldValue('profilePhoto', base64Data);
+            formik.setFieldError('profilePhoto', undefined);
+            setShowCropper(false);
+            toast.success('Profile photo ready!');
+          } catch (e) {
+            console.error('Fallback conversion failed', e);
+            toast.error('Failed to prepare profile photo');
+          }
+        }
+      }, 'image/png', 0.95);
     }
   };
 

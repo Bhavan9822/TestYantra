@@ -1,24 +1,26 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { emitWithAck, connectSocket } from './socket';
 import axios from 'axios';
 
 const API_BASE_URL = 'https://robo-1-qqhu.onrender.com/api';
 
-// Search users async thunk (POST)
+// Search users async thunk (via socket.io)
 export const searchUsers = createAsyncThunk(
 	'search/searchUsers',
 	async (searchQuery, { rejectWithValue }) => {
 		try {
 			const token = localStorage.getItem('authToken');
-			const response = await axios.post(
-				`${API_BASE_URL}/users/search`,
-				{ q: searchQuery },
-				{
-					headers: token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
-				}
-			);
-			return response.data;
+			connectSocket(token);
+			// Expect server to listen to 'users:search' and ack with { users: [...] } or an array
+			const res = await emitWithAck('users:search', { q: searchQuery }, 10000);
+			// Debug: log raw socket response to help map server shapes
+			console.log('searchUsers: raw socket response for', searchQuery, res);
+			// Normalize: server may return array or { users }
+			const users = Array.isArray(res) ? res : (res?.users || []);
+			return { users };
 		} catch (error) {
-			return rejectWithValue(error.response?.data?.message || 'Search failed');
+			const msg = (error && (error.message || error?.toString())) || 'Search failed';
+			return rejectWithValue(msg);
 		}
 	}
 );
@@ -29,16 +31,19 @@ export const sendFriendRequest = createAsyncThunk(
 	async (targetUserId, { rejectWithValue }) => {
 		try {
 			const token = localStorage.getItem('authToken');
+			// Use REST endpoint to send follow request
 			const response = await axios.post(
 				`${API_BASE_URL}/follow/send-request`,
 				{ targetUserId },
 				{
 					headers: token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
+					timeout: 8000,
 				}
 			);
 			return { targetUserId, data: response.data };
 		} catch (error) {
-			return rejectWithValue(error.response?.data?.message || 'Failed to send friend request');
+			const msg = error?.response?.data?.message || (error && (error.message || error?.toString())) || 'Failed to send friend request';
+			return rejectWithValue(msg);
 		}
 	}
 );
@@ -49,16 +54,14 @@ export const getFriends = createAsyncThunk(
 	async (_, { rejectWithValue }) => {
 		try {
 			const token = localStorage.getItem('authToken');
-			const response = await axios.post(
-				`${API_BASE_URL}/friends/list`,
-				{},
-				{
-					headers: token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
-				}
-			);
-			return response.data;
+			connectSocket(token);
+			const res = await emitWithAck('friends:list', {}, 10000);
+			// normalize to { friends }
+			const friends = Array.isArray(res) ? res : (res?.friends || []);
+			return { friends };
 		} catch (error) {
-			return rejectWithValue(error.response?.data?.message || 'Failed to fetch friends');
+			const msg = (error && (error.message || error?.toString())) || 'Failed to fetch friends';
+			return rejectWithValue(msg);
 		}
 	}
 );
@@ -69,16 +72,13 @@ export const getChatMessages = createAsyncThunk(
 	async (friendId, { rejectWithValue }) => {
 		try {
 			const token = localStorage.getItem('authToken');
-			const response = await axios.post(
-				`${API_BASE_URL}/chat/messages`,
-				{ friendId },
-				{
-					headers: token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
-				}
-			);
-			return response.data;
+			connectSocket(token);
+			const res = await emitWithAck('chat:messages', { friendId }, 10000);
+			const messages = res?.messages || res || [];
+			return { messages };
 		} catch (error) {
-			return rejectWithValue(error.response?.data?.message || 'Failed to fetch messages');
+			const msg = (error && (error.message || error?.toString())) || 'Failed to fetch messages';
+			return rejectWithValue(msg);
 		}
 	}
 );
@@ -89,16 +89,12 @@ export const sendMessage = createAsyncThunk(
 	async ({ friendId, message }, { rejectWithValue }) => {
 		try {
 			const token = localStorage.getItem('authToken');
-			const response = await axios.post(
-				`${API_BASE_URL}/chat/send`,
-				{ friendId, message },
-				{
-					headers: token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
-				}
-			);
-			return response.data;
+			connectSocket(token);
+			const res = await emitWithAck('chat:send', { friendId, message }, 10000);
+			return res;
 		} catch (error) {
-			return rejectWithValue(error.response?.data?.message || 'Failed to send message');
+			const msg = (error && (error.message || error?.toString())) || 'Failed to send message';
+			return rejectWithValue(msg);
 		}
 	}
 );

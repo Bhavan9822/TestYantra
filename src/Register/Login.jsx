@@ -73,16 +73,35 @@ const Login = () => {
       return errors;
     },
     onSubmit: async (values) => {
-      const result = await dispatch(
-        loginUser({ 
-          email: values.email.trim(), 
-          password: values.password 
-        })
-      );
+      // Immediate debug: ensure submit handler runs and values are correct
+      console.log('Login form submitted with:', { email: values.email, passwordLength: values.password?.length });
 
-      if (loginUser.fulfilled.match(result)) {
-        toast.success("Login successful!");
-        navigate("/home");
+      try {
+        const result = await dispatch(
+          loginUser({ 
+            email: values.email.trim(), 
+            password: values.password 
+          })
+        );
+
+        // Debug: log the full result from the login thunk so we can inspect response shape
+        console.log('Login dispatch result:', result);
+        try {
+          console.log('Login payload (result.payload):', result.payload);
+          console.log('Login meta (result.meta):', result.meta);
+        } catch (e) {
+          console.warn('Could not log login result payload/meta', e);
+        }
+
+        if (loginUser.fulfilled.match(result)) {
+          toast.success("Login successful!");
+          navigate("/home");
+        } else {
+          console.warn('Login thunk did not fulfill. Result type:', result.type);
+        }
+      } catch (err) {
+        console.error('Login dispatch threw an error:', err);
+        toast.error('Login failed due to unexpected error. See console.');
       }
     },
   });
