@@ -40,10 +40,26 @@ const Articles = () => {
 
     // If photo is an object (from database)
     try {
-      if (photo.data && (photo.data instanceof Uint8Array || Array.isArray(photo.data))) {
-        const bytes = photo.data;
-        const uint8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
-        const binary = uint8.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+      // Common Cloudinary / upload fields
+      if (photo.url || photo.secure_url || photo.location || photo.path) {
+        const url = photo.url || photo.secure_url || photo.location || photo.path;
+        if (typeof url === 'string' && url.trim()) return url.trim();
+      }
+
+      // Some backends serialize Buffers as { data: { data: [...] } }
+      const maybeData = photo.data || photo.buffer || photo._data || photo.dataBuffer;
+      const raw = maybeData && (maybeData.data || maybeData);
+      if (raw && (raw instanceof Uint8Array || Array.isArray(raw))) {
+        const bytes = raw instanceof Uint8Array ? raw : Uint8Array.from(raw);
+        const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+        const b64 = btoa(binary);
+        return `data:image/jpeg;base64,${b64}`;
+      }
+
+      // Handle nested case: photo.data.data (Mongoose Buffer serialization)
+      if (photo.data && photo.data.data && (Array.isArray(photo.data.data) || photo.data.data instanceof Uint8Array)) {
+        const arr = photo.data.data instanceof Uint8Array ? photo.data.data : Uint8Array.from(photo.data.data);
+        const binary = arr.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
         const b64 = btoa(binary);
         return `data:image/jpeg;base64,${b64}`;
       }
@@ -193,10 +209,48 @@ const Articles = () => {
     return 'Community Member';
   }, [currentUser, getUserFromPost]);
 
-  // Enhanced helper to get user's profile photo
+  // Enhanced helper to get user's profile photo — check many possible shapes
   const getUserProfilePhoto = useCallback((post) => {
-    const user = getUserFromPost(post);
-    return getImageSrc(user.profilePhoto || user.profilePhotoUrl || user.avatar || user.image || user.picture);
+    const user = getUserFromPost(post) || {};
+
+    // Check common direct fields on the user object first
+    const tryFields = [
+      user.userProfilePhoto,
+      user.userProfilePhotoUrl,
+      user.profilePhoto,
+      user.profilePhotoUrl,
+      user.profile?.photo,
+      user.profile?.photoURL,
+      user.profile?.avatar,
+      user.avatar,
+      user.image,
+      user.picture,
+      user.profilePic,
+      user.photoURL,
+      user.photo,
+      user.pictureUrl,
+    ];
+
+    for (const candidate of tryFields) {
+      if (candidate) {
+        const src = getImageSrc(candidate);
+        if (src && src !== defaultImage) return src;
+      }
+    }
+
+    // Check common upload response shapes on the user (Cloudinary-like)
+    const urlFields = user.url || user.secure_url || user.location || user.path;
+    if (urlFields && typeof urlFields === 'string') return urlFields;
+
+    // Also accept article-level fields that some APIs attach directly to the post
+    const postLevel = post.profilePhoto || post.userProfilePhoto || post.authorProfilePhoto || post.profile?.photo;
+    if (postLevel) {
+      const src = getImageSrc(postLevel);
+      if (src && src !== defaultImage) return src;
+    }
+
+    // As last resort, fall back to the normalized userPhoto for the logged-in user
+    return getImageSrc(user.profilePhoto || user.profilePhotoUrl || user.avatar || user.image || user.picture || user.photo || defaultImage);
   }, [getUserFromPost, getImageSrc]);
 
   // Combine posts for display
@@ -401,7 +455,7 @@ const Articles = () => {
                       <div className="flex items-center space-x-3">
                         <div className="relative">
                           <img 
-                            src={userProfilePhoto || userPhoto || defaultImage}
+                            src={`${userProfilePhoto}` || `${userPhoto}` || `${defaultImage}`}
                             alt={userDisplayName}
                             className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
                             onError={(e) => { e.target.onerror = null; e.target.src = userPhoto || defaultImage; }}

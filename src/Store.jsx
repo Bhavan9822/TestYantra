@@ -7,6 +7,7 @@ import likeReducer from './LikeSlice';
 import commentReducer from './CommentSlice';
 import notificationReducer from './NotificationSlice';
 import followReducer from './FollowSendSlice';
+import usersReducer from './usersSlice';
 
 const store = configureStore({
   reducer: {
@@ -14,6 +15,7 @@ const store = configureStore({
     likes: likeReducer,
     notifications: notificationReducer,
     follow: followReducer,
+    users: usersReducer,
     auth: authReducer,
     articles: articlesReducer, // This should be 'articles' not 'posts'
     search: searchReducer,

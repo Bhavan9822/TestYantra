@@ -560,6 +560,36 @@ export const fetchPostById = fetchArticleById;
 
 // ==================== SLICE DEFINITION ====================
 
+// Normalize article shape so each article has a consistent author object
+// with `userProfilePhoto` populated when available from multiple server shapes.
+const normalizeArticle = (raw) => {
+  if (!raw || typeof raw !== 'object') return raw;
+  const article = Array.isArray(raw) ? raw : { ...raw };
+
+  // Determine user object from common fields
+  const user = article.user || article.author || article.postedBy || null;
+
+  const candidate = (u) => {
+    if (!u || typeof u !== 'object') return null;
+    return (
+      u.userProfilePhoto || u.userProfilePhotoUrl ||
+      u.profilePhoto || u.profilePhotoUrl ||
+      u.photo || u.photoURL ||
+      u.picture || u.avatar || u.image || null
+    );
+  };
+
+  const userPhoto = candidate(user) || article.userProfilePhoto || article.profilePhoto || article.profilePhotoUrl || null;
+
+  // Build a normalizedUser object
+  const normalizedUser = user && typeof user === 'object' ? { ...user } : {};
+  if (userPhoto) normalizedUser.userProfilePhoto = normalizedUser.userProfilePhoto || userPhoto;
+
+  // Attach normalized user back to article under `user`
+  const normalized = { ...article, user: normalizedUser };
+  return normalized;
+};
+
 const articlesSlice = createSlice({
   name: 'articles',
   initialState: {
@@ -656,9 +686,26 @@ const articlesSlice = createSlice({
       })
       .addCase(fetchPosts.fulfilled, (state, action) => {
         state.loading = false;
-        state.posts = Array.isArray(action.payload) ? action.payload : [];
+        const raw = Array.isArray(action.payload) ? action.payload : [];
+        // Normalize each article so author photo is available
+        state.posts = raw.map((r) => normalizeArticle(r));
         state.lastFetched = Date.now();
-        log('info', 'Posts updated in state', { count: state.posts.length });
+        log('info', 'Posts updated in state (normalized)', { count: state.posts.length });
+
+        // Debug: log first few normalized posts and their user.photo fields
+        try {
+          const samples = state.posts.slice(0, 5).map(p => ({
+            id: p._id || p.id,
+            userPreview: p.user ? {
+              username: p.user.username || p.user.name || null,
+              userProfilePhoto: p.user.userProfilePhoto || p.user.profilePhoto || p.user.photo || null,
+              rawUser: p.user
+            } : null
+          }));
+          console.log('ArticlesSlice: normalized post samples', samples);
+        } catch (e) {
+          console.warn('ArticlesSlice: failed to log post samples', e);
+        }
       })
       .addCase(fetchPosts.rejected, (state, action) => {
         state.loading = false;
@@ -674,7 +721,7 @@ const articlesSlice = createSlice({
         state.createPostLoading = false;
         const newPost = action.payload;
         if (newPost) {
-          state.posts.unshift(newPost);
+          state.posts.unshift(normalizeArticle(newPost));
         }
       })
       .addCase(createPost.rejected, (state, action) => {
@@ -689,7 +736,7 @@ const articlesSlice = createSlice({
       })
       .addCase(fetchArticleById.fulfilled, (state, action) => {
         state.articleLoading = false;
-        state.currentArticle = action.payload || null;
+        state.currentArticle = action.payload ? normalizeArticle(action.payload) : null;
       })
       .addCase(fetchArticleById.rejected, (state, action) => {
         state.articleLoading = false;
