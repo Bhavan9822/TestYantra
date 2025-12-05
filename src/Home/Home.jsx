@@ -1,28 +1,23 @@
-// Home.jsx
+// Home.jsx - UPDATED VERSION
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { 
-  searchUsers, 
-  sendFriendRequest, 
-  getFriends, 
-  getChatMessages, 
-  sendMessage,
+  searchUsers,
   clearSearchResults,
-  setActiveChat,
-  closeSearchResults,
   setLocalSearchResult,
-  sendFriendRequestLocal
+  sendFriendRequest
 } from '../SearchSlice';
-import { sendFollowRequest, followRequestReceived as followRequestReceivedAction } from '../usersSlice';
+import { sendFollowRequest, updateUserFollowStatus, followRequestReceived as followRequestReceivedAction } from '../usersSlice';
 import { sendFollowByUsername } from '../FollowSendSlice';
+import { getFriends, getChatMessages, sendMessage, setActiveChat } from '../SearchSlice';
 import NotificationBell from '../component/NotificationBell';
 import { connectSocket, on as socketOn, joinRoom } from '../socket';
-import { addFollowRequestNotification } from '../NotificationSlice';
+import { addFollowRequestNotification, addLikeNotification } from '../NotificationSlice';
 import { createPost, fetchPosts } from '../ArticlesSlice';
-import { toggleLike, optimisticToggleLike, selectArticleLikes, selectIsLiking } from '../LikeSlice';
-import { addLikeNotification } from '../NotificationSlice';
+import { toggleLike, optimisticToggleLike } from '../LikeSlice';
 import { formatTime } from '../FormatTime';
+import { toast } from 'react-toastify';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -34,27 +29,20 @@ const Home = () => {
   const { 
     searchResults = [], 
     searchLoading = false, 
+    showSearchResults = false,
+    followLoading = false,
+    followError = null
+  } = useSelector((state) => state.users || {});
+  
+  const { 
     friends = [], 
     activeChat = null, 
     chatMessages = [], 
     chatLoading = false,
-    showSearchResults = false,
-    friendRequestLoading = false
   } = useSelector((state) => state.search || {});
   
-  // Select the raw articleLikes map from Redux. Do not build new objects inside useSelector.
   const articleLikesMap = useSelector((state) => state.likes?.articleLikes || {});
   const likeOperations = useSelector((state) => state.likes?.likeOperations || {});
-
-  // Derive per-post like states from the articleLikesMap in a memoized way.
-  const likeStates = useMemo(() => {
-    const states = {};
-    posts.forEach(post => {
-      const postId = post._id || post.id;
-      states[postId] = articleLikesMap[postId] || { likes: [], count: 0, isLikedByUser: false };
-    });
-    return states;
-  }, [posts, articleLikesMap]);
 
   const searchRef = useRef(null);
   const navInputRef = useRef(null);
@@ -63,26 +51,21 @@ const Home = () => {
   const defaultImage = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnnA_0pG5u9vFP1v9a2DKaqVMCEL_0-FXjkduD2ZzgSm14wJy-tcGygo_HZX_2bzMHF8I&usqp=CAU";
   
   const getImageSrc = useCallback((photo) => {
+    // ... (keep your existing getImageSrc function)
     if (!photo) return defaultImage;
 
     if (typeof photo === 'string') {
       const s = photo.trim();
       if (!s) return defaultImage;
-
-      // Accept data URLs directly
       if (s.startsWith('data:image/')) return s;
-
-      // Accept absolute http(s), blob URLs, or root-relative paths as-is
       if (s.startsWith('http') || s.startsWith('blob:') || s.startsWith('/')) return s;
-
-      // If it looks like base64 content, convert to data URL
+      
       const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
       const cleanPhoto = s.replace(/\s/g, '');
       if (cleanPhoto.length > 100 && base64Regex.test(cleanPhoto)) {
         return `data:image/jpeg;base64,${cleanPhoto}`;
       }
-
-      // Last resort: return the string as-is (handles relative paths or other valid server-provided URLs)
+      
       return s;
     }
 
@@ -101,9 +84,7 @@ const Home = () => {
     return defaultImage;
   }, [defaultImage]);
 
-  // Derive the current user's profile image using multiple possible field names.
-  // Some user objects use `profilePhoto`, others `profilePhotoUrl`, `avatar`, `image`, `picture`, or `profilePic`.
-  // Use the same robust field set as `getUserProfilePhoto` so navbar/profile images match article author images.
+  // Get current user's photo
   const userPhoto = useMemo(() => getImageSrc(
     currentUser?.profilePhoto ||
     currentUser?.profilePhotoUrl ||
@@ -112,16 +93,16 @@ const Home = () => {
     currentUser?.picture ||
     currentUser?.profilePic
   ), [currentUser, getImageSrc]);
-  // Ensure a stable `userProfilePhoto` variable is available everywhere
-  // (alias to `userPhoto` so existing code can rely on this name).
+  
   const userProfilePhoto = userPhoto;
   const userName = useMemo(() => currentUser?.username || "User", [currentUser]);
   const userEmail = useMemo(() => currentUser?.email || "user@example.com", [currentUser]);
 
   // State for UI
-  // Local overrides provide immediate UI feedback and act as a fallback
   const [likeOverrides, setLikeOverrides] = useState({});
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState({
+    targetUsername:""
+  });
   const [messageInput, setMessageInput] = useState('');
   const [showChat, setShowChat] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -130,300 +111,271 @@ const Home = () => {
   const [commentsVisible, setCommentsVisible] = useState({});
   const [showShareModal, setShowShareModal] = useState(false);
   const [sharePostId, setSharePostId] = useState(null);
+  const [debounceTimer, setDebounceTimer] = useState(null);
 
-  useEffect(() => {
-    console.log('Home: Fetching friends and posts');
-    dispatch(getFriends());
-    dispatch(fetchPosts());
+  // ========== SEARCH AND FOLLOW REQUEST FUNCTIONALITY ==========
 
-    // Ensure socket connection and listen for incoming follow requests
-    try {
-      const token = localStorage.getItem('authToken');
-      connectSocket(token);
-      // Join the user's personal room so server can emit direct events
-      const userId = currentUser?._id || currentUser?.id;
-      if (userId) {
-        joinRoom(`user:${userId}`).catch((err) => console.warn('joinRoom failed', err));
-      }
-
-      const off = socketOn('followRequestReceived', (payload) => {
-        try {
-          console.log('Received followRequestReceived via socket:', payload);
-          // payload expected to contain { actor, requestId, message }
-          dispatch(addFollowRequestNotification(payload));
-          // update users state so UI reflects incoming request
-          try { dispatch(followRequestReceivedAction(payload)); } catch (e) {}
-        } catch (e) {
-          console.warn('Error handling followRequestReceived', e);
-        }
-      });
-
-      return () => {
-        try { if (off) off(); } catch (e) {}
-      };
-    } catch (e) {
-      // ignore socket errors here
-    }
-  }, [dispatch]);
-
-  useEffect(() => {
-    // Auto-focus the navbar search input when the Home component mounts
-    try {
-      if (navInputRef.current && typeof navInputRef.current.focus === 'function') {
-        navInputRef.current.focus();
-      }
-    } catch (e) {
-      // ignore focus errors
-    }
-
-    const handleClickOutside = (event) => {
-      if (searchRef.current && !searchRef.current.contains(event.target)) {
-        dispatch(closeSearchResults());
-      }
-    };
-
-    // Keyboard shortcut: press '/' to focus the navbar search input
-    const handleKeyDown = (e) => {
-      // Ignore when user is already typing in an input/textarea or using modifier keys
-      const tag = (document.activeElement && document.activeElement.tagName) || '';
-      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && tag !== 'INPUT' && tag !== 'TEXTAREA') {
-        e.preventDefault();
-        if (navInputRef.current) {
-          navInputRef.current.focus();
-          navInputRef.current.select && navInputRef.current.select();
-        }
-      }
-
-      // Escape should close search results and blur the input
-      if (e.key === 'Escape') {
-        dispatch(closeSearchResults());
-        if (navInputRef.current) navInputRef.current.blur();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [dispatch]);
-
-  useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [chatMessages]);
-
-  // Helper function to check if current user has liked a post
-  const hasUserLikedPost = useCallback((post) => {
-    const userId = currentUser?._id || currentUser?.id || currentUser?.userId;
-    if (!userId) return false;
-
-    const postId = post._id || post.id;
-    // Local override wins for immediate UI responsiveness
-    if (likeOverrides[postId] && typeof likeOverrides[postId].hasLiked !== 'undefined') {
-      return likeOverrides[postId].hasLiked;
-    }
-
-    // First, check the Redux like state
-    if (likeStates[postId]?.isLikedByUser !== undefined) {
-      return likeStates[postId].isLikedByUser;
-    }
-    
-    // Fallback: Check post.likes array
-    if (post.likes && Array.isArray(post.likes)) {
-      return post.likes.some(like => {
-        if (!like) return false;
-        // like may be a string id, or an object with several possible id fields
-        if (typeof like === 'string') return like === String(userId);
-        const lid = like.userId || like.user || like._id || like.id || like.userId === undefined ? undefined : like.userId;
-        // check common fields
-        if (like.userId && String(like.userId) === String(userId)) return true;
-        if (like._id && String(like._id) === String(userId)) return true;
-        if (like.id && String(like.id) === String(userId)) return true;
-        // fallback: if like contains nested user object
-        if (like.user && (like.user._id || like.user.id) && (String(like.user._id || like.user.id) === String(userId))) return true;
-        return false;
-      });
-    }
-    
-    return false;
-  }, [currentUser, likeStates, likeOverrides]);
-
-  // Helper function to get like count for a post
-  const getLikeCount = useCallback((post) => {
-    const postId = post._id || post.id;
-    // Local override wins
-    if (likeOverrides[postId] && typeof likeOverrides[postId].count !== 'undefined') {
-      return likeOverrides[postId].count;
-    }
-
-    // First, check the Redux like state
-    if (likeStates[postId]?.count !== undefined) {
-      return likeStates[postId].count;
-    }
-    
-    // Fallback: Check post.likes array
-    if (post.likes && Array.isArray(post.likes)) {
-      return post.likes.length;
-    }
-    
-    return 0;
-  }, [likeStates, likeOverrides]);
-
-  // Check if like operation is in progress for a post
-  const isLikingPost = useCallback((postId) => {
-    // If we have a local override for this post, use its inFlight flag
-    // (this allows immediate UI updates without relying on Redux op flag).
-    if (Object.prototype.hasOwnProperty.call(likeOverrides, postId)) {
-      return Boolean(likeOverrides[postId].inFlight);
-    }
-    return likeOperations[postId] || false;
-  }, [likeOperations, likeOverrides]);
-
-  // Search functionality
-  // Helper to get user data from post — moved above handleSearch to avoid TDZ
-  const getUserFromPost = useCallback((post) => {
-    if (post.user && typeof post.user === 'object') return post.user;
-    if (post.author && typeof post.author === 'object') return post.author;
-    if (post.postedBy && typeof post.postedBy === 'object') return post.postedBy;
-    if (post.userId && typeof post.userId === 'object') return post.userId;
-    return {};
-  }, []);
-
+  // Handle search with debouncing
   const handleSearch = useCallback((query) => {
-    const q = (query || '').trim();
-    setSearchQuery(q);
+    console.log(query);
+    
+    const q = query;
+    setSearchQuery((preVal)=>({...preVal,["targetUsername"]:q}));
 
-    // If query is empty, clear
+    // Clear previous debounce timer
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+
+    // If query is empty, clear results
     if (!q) {
       dispatch(clearSearchResults());
       return;
     }
 
-    // Local fallback: try to find an exact username match among known users
-    const fallbackLocalSearch = () => {
-      // Build known users from friends and post authors
-      const known = new Map();
+    // Set a new debounce timer
+    const timer = setTimeout(() => {
+      performSearch(q);
+    }, 300); // 300ms debounce
 
-      // Friends list is authoritative for known contacts
-      (friends || []).forEach(f => {
-        if (f && f.username) known.set(String(f.username).toLowerCase(), f);
-      });
+    setDebounceTimer(timer);
+  });
 
-      // Posts authors
-      (posts || []).forEach(p => {
-        try {
-          const u = getUserFromPost(p) || {};
-          if (u && u.username) {
-            const key = String(u.username).toLowerCase();
-            if (!known.has(key)) known.set(key, u);
-          }
-        } catch (e) {
-          // ignore malformed post
-        }
-      });
-
-      const found = known.get(q.toLowerCase());
-      if (found) {
-        dispatch(setLocalSearchResult(found));
-      } else {
-        // No exact local match; clear results so we don't show a random user
-        dispatch(clearSearchResults());
+  // Perform the actual search
+  const performSearch = useCallback(async (query) => {
+    try {
+      // Dispatch the search action
+      console.log(searchQuery);
+      
+      const result = await dispatch(sendFriendRequest(searchQuery));
+      
+      if (!result.users || result.users.length === 0) {
+        toast.info('No users found');
       }
-    };
-
-    // If query is long enough, attempt server search first; otherwise use local fallback
-    if (q.length > 2) {
-      dispatch(searchUsers(q)).then((res) => {
-        const payload = res.payload || {};
-        const users = payload.users || [];
-        if (!users || users.length === 0) {
-          // Server returned no matches — try local exact match
-          fallbackLocalSearch();
-        }
-        // If server returned users, `searchUsers.fulfilled` will update the store and UI
-      }).catch(() => {
-        // Server route missing or failed — fallback local exact match
-        fallbackLocalSearch();
-      });
-    } else {
-      // For short queries, do exact local match only
-      fallbackLocalSearch();
+    } catch (error) {
+      console.error('Search failed:', error);
+      // Show a local quick-action suggestion so user can still attempt follow-by-username
+      try {
+        dispatch(setLocalSearchResult(query));
+        toast.info('Search failed; showing quick follow option for entered username');
+      } catch (e) {
+        console.warn('Could not set local search result', e);
+        toast.error('Search failed. Please try again.');
+      }
     }
   }, [dispatch]);
 
-  // Friend request functionality
-  const handleFriendRequest = useCallback(async (userId) => {
-    // If this is a local suggestion (id starts with 'local-'), perform an optimistic
-    // local update so the UI shows 'requested' immediately. The real backend
-    // follow endpoint may or may not accept usernames; if available we still
-    // attempt to call it.
-    if (typeof userId === 'string' && userId.startsWith('local-')) {
-      // Optimistic UI update
-      dispatch(sendFriendRequestLocal(userId));
-      // Also attempt to resolve username -> id on the server and send a real follow request.
-      const username = userId.replace(/^local-/, '');
-      try {
-        const res = await dispatch(sendFollowByUsername(username));
-        if (res.type && res.type.endsWith('/fulfilled')) {
-          alert('Follow request sent');
-          return;
-        }
-        // otherwise fallthrough to local notice
-      } catch (e) {
-        // ignore — fall back to optimistic local behavior
-      }
-
-      alert('Follow request sent (local)');
+  // Handle follow request
+  const handleFollowRequest = useCallback(async (user) => {
+    if (!user || !user._id) {
+      toast.error('Invalid user');
       return;
     }
 
-    // Prefer the users slice sendFollowRequest thunk to create a follow request
-    try {
-      const res = await dispatch(sendFollowRequest(userId));
-      if (res && res.type && res.type.endsWith('/fulfilled')) {
-        // Update search UI to show 'requested'
-        dispatch(sendFriendRequestLocal(userId));
-        alert('Follow request sent');
+    // Don't allow following yourself
+    if (user._id === currentUser?._id) {
+      toast.info("You can't follow yourself");
+      return;
+    }
+    // If this is a local fallback search result (no server id), use username-based follow
+    const isLocal = !!user._local || (typeof user._id === 'string' && user._id.startsWith('local-'));
+
+    if (isLocal) {
+      // show requested state locally
+      try {
+        dispatch(setLocalSearchResult({ ...user, friendStatus: 'requested', _local: true }));
+      } catch (e) {
+        // ignore
+      }
+
+      try {
+        const res = await dispatch(sendFollowByUsername(user.username || (user._id || '').replace(/^local-/, ''))).unwrap();
+        if (res && (res.success || res.targetUserId)) {
+          toast.success('Follow request sent (by username)');
+          setSearchQuery({
+            "targetUsername":""
+          });
+          dispatch(clearSearchResults());
+          return;
+        }
+      } catch (err) {
+        console.error('Username follow failed:', err);
+        // revert local UI
+        try { dispatch(setLocalSearchResult({ ...user, friendStatus: 'none', _local: true })); } catch (e) {}
+        toast.error(err || 'Failed to send follow request by username');
         return;
       }
-
-      // Fallback to existing search/sendFriendRequest
-      const result = await dispatch(sendFriendRequest(userId));
-      if (result.type === 'search/sendFriendRequest/fulfilled') {
-        alert('Follow request sent');
-      } else {
-        if (result.payload) alert(result.payload);
-      }
-    } catch (e) {
-      console.error('handleFriendRequest error', e);
-      alert('Failed to send follow request');
     }
-  }, [dispatch]);
 
-  // Chat functionality
-  const handleOpenChat = useCallback(async (friend) => {
-    dispatch(setActiveChat(friend));
-    setShowChat(true);
-    await dispatch(getChatMessages(friend._id));
-  }, [dispatch]);
-
-  const handleSendMessage = useCallback(async () => {
-    if (!messageInput.trim() || !activeChat) return;
-
-    const result = await dispatch(sendMessage({
-      friendId: activeChat._id,
-      message: messageInput.trim()
+    // Optimistically update UI for server-backed user id
+    dispatch(updateUserFollowStatus({ 
+      userId: user._id, 
+      status: 'requested' 
     }));
 
-    if (result.type === 'search/sendMessage/fulfilled') {
-      setMessageInput('');
+    try {
+      // Send follow request via userId
+      const result = await dispatch(sendFollowRequest(user._id)).unwrap();
+      
+      if (result && result.success) {
+        toast.success('Follow request sent successfully!');
+        
+        // Emit socket event for real-time notification
+        try {
+          const token = localStorage.getItem('authToken');
+          connectSocket(token);
+        } catch (socketErr) {
+          console.warn('Socket notification failed:', socketErr);
+        }
+      }
+    } catch (error) {
+      console.error('Follow request failed:', error);
+      
+      // Revert optimistic update on failure
+      dispatch(updateUserFollowStatus({ 
+        userId: user._id, 
+        status: 'none' 
+      }));
+      
+      toast.error(error || 'Failed to send follow request');
     }
-  }, [dispatch, activeChat, messageInput]);
+  }, [dispatch, currentUser]);
 
-  // Create post functionality
+  // Handle follow by username (when user presses Enter on search)
+  const handleFollowByUsername = useCallback(async (username) => {
+    if (!username.trim()) {
+      toast.error('Please enter a username');
+      return;
+    }
+
+    try {
+      const result = await dispatch(sendFollowByUsername(username.trim())).unwrap();
+      
+      if (result.success) {
+        toast.success(`Follow request sent to ${username}`);
+        setSearchQuery({
+          targetUsername:""
+        });
+        dispatch(clearSearchResults());
+      }
+    } catch (error) {
+      console.error('Follow by username failed:', error);
+      toast.error(error || 'Failed to send follow request');
+    }
+  }, [dispatch]);
+
+  // ========== SOCKET.IO INTEGRATION ==========
+
+  useEffect(() => {
+    // Fetch initial data
+    console.log('Home: Fetching friends and posts');
+    dispatch(getFriends());
+    dispatch(fetchPosts());
+
+    // Setup socket connection and listeners
+    try {
+      const token = localStorage.getItem('authToken');
+      connectSocket(token);
+      
+      // Join user's personal room
+      const userId = currentUser?._id || currentUser?.id;
+      if (userId) {
+        joinRoom(`user:${userId}`).catch((err) => 
+          console.warn('joinRoom failed', err)
+        );
+      }
+
+      // Listen for incoming follow requests
+      const offFollowRequest = socketOn('followRequestReceived', (payload) => {
+        try {
+          console.log('Received followRequestReceived via socket:', payload);
+          
+          // Update Redux state
+          dispatch(followRequestReceivedAction(payload));
+          
+          // Add notification
+          dispatch(addFollowRequestNotification(payload));
+          
+          // Show toast notification
+          toast.info(`New follow request from ${payload.sender?.username || 'someone'}`);
+        } catch (e) {
+          console.warn('Error handling followRequestReceived', e);
+        }
+      });
+
+      // Listen for follow request acceptance
+      const offFollowAccepted = socketOn('followRequestAccepted', (payload) => {
+        try {
+          console.log('Follow request accepted:', payload);
+          
+          // Update follow status
+          if (payload.userId) {
+            dispatch(updateUserFollowStatus({
+              userId: payload.userId,
+              status: 'following'
+            }));
+          }
+          
+          toast.success('Follow request accepted!');
+        } catch (e) {
+          console.warn('Error handling followRequestAccepted', e);
+        }
+      });
+
+      return () => {
+        // Cleanup socket listeners
+        try { 
+          if (offFollowRequest) offFollowRequest(); 
+          if (offFollowAccepted) offFollowAccepted(); 
+        } catch (e) {}
+      };
+    } catch (e) {
+      console.error('Socket setup failed:', e);
+    }
+  }, [dispatch, currentUser]);
+
+  // ========== UI HELPERS ==========
+
+  // Get follow button text and styling based on status
+  const getFollowButtonInfo = useCallback((user) => {
+    if (!user || user._id === currentUser?._id) {
+      return { text: '', disabled: true, className: 'hidden' };
+    }
+
+    const status = user.followStatus || 'none';
+    
+    switch (status) {
+      case 'following':
+        return {
+          text: 'Following',
+          disabled: true,
+          className: 'px-3 py-1 bg-gray-200 text-gray-600 rounded-lg text-sm cursor-default'
+        };
+      
+      case 'requested':
+        return {
+          text: 'Request Sent',
+          disabled: true,
+          className: 'px-3 py-1 bg-gray-300 text-gray-600 rounded-lg text-sm cursor-not-allowed'
+        };
+      
+      case 'pending':
+        return {
+          text: 'Respond',
+          disabled: false,
+          className: 'px-3 py-1 bg-blue-100 text-blue-600 rounded-lg text-sm hover:bg-blue-200'
+        };
+      
+      default: // 'none'
+        return {
+          text: 'Follow',
+          disabled: false,
+          className: 'px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg text-sm hover:opacity-90'
+        };
+    }
+  }, [currentUser]);
+
+  // Create post handlers (open modal, close modal, submit)
   const handleInputClick = useCallback(() => {
     setShowCreateModal(true);
   }, []);
@@ -435,238 +387,145 @@ const Home = () => {
   }, []);
 
   const handleCreatePost = useCallback(async (e) => {
-    e && e.preventDefault();
-    if (!newPostTitle.trim() || !newPostContent.trim()) {
-      alert('Please enter a title and content for your post');
+    e.preventDefault();
+    const title = (newPostTitle || '').trim();
+    const content = (newPostContent || '').trim();
+    if (!title || !content) {
+      toast.error('Please provide both title and content');
       return;
     }
 
     try {
-      const result = await dispatch(createPost({ 
-        title: newPostTitle.trim(), 
-        content: newPostContent.trim() 
-      }));
-      
-      if (result.type === 'articles/createPost/fulfilled') {
-        handleCloseCreateModal();
-        const createdPost = result.payload.post || result.payload.article || result.payload;
-        dispatch(fetchPosts());
-        navigate('/articles', { state: { newPost: createdPost } });
-      } else {
-        const msg = result.payload || 'Unable to create post';
-        alert(msg);
-      }
+      // Dispatch createPost thunk; payload shape depends on your backend
+      await dispatch(createPost({ title, content }));
+      toast.success('Post created');
+      handleCloseCreateModal();
+      // Refresh posts
+      dispatch(fetchPosts());
     } catch (err) {
-      console.error('Create post failed', err);
-      alert('Create post failed. Please try again.');
+      console.error('Failed to create post', err);
+      toast.error('Failed to create post');
     }
-  }, [dispatch, navigate, newPostTitle, newPostContent, handleCloseCreateModal]);
+  }, [dispatch, newPostTitle, newPostContent, handleCloseCreateModal]);
 
-  // LIKE FUNCTIONALITY - Updated with proper color handling
+  // Handle like/unlike for posts (used by post list)
   const handleToggleLike = useCallback(async (postId) => {
     if (!currentUser?._id) {
-      alert('Please login to like posts');
       navigate('/login');
       return;
     }
 
-    const post = posts.find(p => (p._id || p.id) === postId);
-    if (!post) return;
+    // Find the post object for metadata (title, owner)
+    const post = (posts || []).find(p => (p._id || p.id) === postId);
+    const articleOwnerId = post?.user?._id || post?.userId || post?.author?._id || post?.postedBy?._id || null;
+    const currentLikes = (articleLikesMap && articleLikesMap[postId] && articleLikesMap[postId].likes) || post?.likes || [];
+    const currentlyLiked = !!((articleLikesMap && articleLikesMap[postId] && articleLikesMap[postId].isLikedByUser) || (Array.isArray(currentLikes) && currentLikes.some(l => (typeof l === 'string' ? l === currentUser._id : (l.userId === currentUser._id || l._id === currentUser._id || l.id === currentUser._id)))));
 
-    // Get current state before toggling
-    const wasLiked = hasUserLikedPost(post);
-    const prevCount = getLikeCount(post);
-    const newLiked = !wasLiked;
-    const newCount = Math.max(0, prevCount + (newLiked ? 1 : -1));
-
-    console.log(`Toggling like for post ${postId}:`, {
-      wasLiked,
-      prevCount,
-      newLiked,
-      newCount
-    });
-
-    // Set local override for instant UI update with red color
-    // Do not mark as inFlight so the icon updates immediately (no spinner)
-    setLikeOverrides((prev) => ({
-      ...prev,
-      [postId]: { 
-        hasLiked: newLiked, 
-        count: newCount, 
-        inFlight: false,
-        timestamp: Date.now()
-      }
-    }));
-
-    // Also dispatch optimistic redux update
-    const currentLikes = post?.likes || [];
-    dispatch(optimisticToggleLike({ 
-      articleId: postId, 
-      userId: currentUser._id,
-      currentLikes 
-    }));
+    // Optimistic update
+    try {
+      dispatch(optimisticToggleLike({ articleId: postId, userId: currentUser._id, currentLikes }));
+    } catch (e) {
+      console.warn('Optimistic like update failed', e);
+    }
 
     try {
-      // Send actual request to server
-      // Determine article owner id and title to allow server/thunk to decide notifications
-      const postUser = getUserFromPost(post) || {};
-      const articleOwnerId = postUser._id || postUser.id || postUser.userId || null;
-      const result = await dispatch(toggleLike({ 
+      await dispatch(toggleLike({ 
         articleId: postId, 
-        userId: currentUser._id,
-        wasLikedBefore: wasLiked,
+        userId: currentUser._id, 
+        wasLikedBefore: currentlyLiked,
         articleOwnerId,
-        articleTitle: post.title || 'Your post',
-        currentUserName: userName
-      }));
-
-      console.log('Like toggle result:', result);
-
-      // Reconcile local override on success
-      if (result.type && result.type.endsWith('/fulfilled')) {
-        // If the thunk indicates a notification should be created, dispatch it
-        try {
-          if (result.payload && result.payload._shouldCreateNotification && result.payload._notificationData) {
-            dispatch(addLikeNotification(result.payload._notificationData));
-          }
-        } catch (e) {
-          console.warn('Failed to dispatch like notification from Home:', e);
-        }
-        // Derive server-confirmed values from payload (support multiple shapes)
-        const payload = result.payload || result.meta?.arg || {};
-        const serverHasLiked = payload.hasLiked ?? payload.isLiked ?? payload.userHasLiked ?? payload.has_liked ?? payload.article?.hasLiked ?? payload.hasLiked;
-        const serverCount = payload.likeCount ?? payload.count ?? payload.article?.likeCount ?? payload.article?.likes?.length ?? payload.likes?.length ?? null;
-
-        // Update local override to reflect server truth (do not remove it) so the solid icon remains until user toggles again
-        setLikeOverrides((prev) => ({
-          ...prev,
-          [postId]: {
-            hasLiked: serverHasLiked ?? newLiked,
-            count: serverCount !== null && serverCount !== undefined ? Number(serverCount) : newCount,
-            inFlight: false,
-            timestamp: Date.now()
-          }
-        }));
-      } else {
-        // On failure, revert local override after a delay
-        setTimeout(() => {
-          setLikeOverrides((prev) => {
-            const copy = { ...prev };
-            copy[postId] = { 
-              hasLiked: wasLiked, 
-              count: prevCount, 
-              inFlight: false,
-              timestamp: Date.now()
-            };
-            return copy;
-          });
-        }, 500);
-        
-        console.error('Like toggle failed:', result.error || result.payload || result);
-        alert('Failed to update like. Please try again.');
-      }
+        articleTitle: post?.title || '',
+        currentUserName: currentUser?.username || currentUser?.name || ''
+      })).unwrap();
     } catch (err) {
-      console.error('Error in handleToggleLike:', err);
-      // Revert on error
-      setLikeOverrides((prev) => {
-        const copy = { ...prev };
-        copy[postId] = { 
-          hasLiked: wasLiked, 
-          count: prevCount, 
-          inFlight: false,
-          timestamp: Date.now()
-        };
-        return copy;
-      });
-      alert('An error occurred. Please try again.');
+      console.error('Like toggle failed:', err);
+      // revert optimistic update by toggling back using previous likes
+      try {
+        dispatch(optimisticToggleLike({ articleId: postId, userId: currentUser._id, currentLikes }));
+      } catch (e) {
+        console.warn('Failed to revert optimistic like', e);
+      }
+      toast.error('Failed to update like. Please try again.');
     }
-  }, [dispatch, currentUser?._id, posts, navigate, hasUserLikedPost, getLikeCount]);
+  }, [dispatch, currentUser, navigate, posts, articleLikesMap]);
 
-  // Comment functionality
-  const handleShowComments = useCallback((postId) => {
-    setCommentsVisible((prev) => {
-      if (prev[postId]) return prev;
-      const total = (posts.find((p) => (p._id || p.id) === postId)?.comments || []).length;
-      return { ...prev, [postId]: Math.min(5, total) };
+  // ========== RENDER FUNCTIONS ==========
+
+  // Build postsData for rendering (safe fallback when helper functions are missing)
+  const postsData = useMemo(() => {
+    if (!Array.isArray(posts)) return [];
+    return posts.map((post) => {
+      const postId = post._id || post.id || post.postId || null;
+      const userObj = post.user || post.author || post.postedBy || {};
+      const userDisplayName = userObj.username || userObj.name || `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim() || 'Community Member';
+      const userProfilePhoto = getImageSrc(
+        userObj.userProfilePhoto || userObj.userProfilePhotoUrl || userObj.profilePhotoUrl || userObj.profilePhoto || userObj.avatar || post.userProfilePhoto || null
+      );
+      const hasLiked = !!(articleLikesMap && postId && Array.isArray(articleLikesMap[postId]) && articleLikesMap[postId].includes(currentUser?._id));
+      const likeCount = typeof post.likeCount === 'number' ? post.likeCount : (post.likes && post.likes.length) || 0;
+      const isLiking = !!(likeOperations && postId && likeOperations[postId]);
+      return { post, postId, userDisplayName, userProfilePhoto, hasLiked, likeCount, isLiking };
     });
-  }, [posts]);
+  }, [posts, articleLikesMap, likeOperations, currentUser, getImageSrc]);
 
-  const handleShowMoreComments = useCallback((postId) => {
-    setCommentsVisible((prev) => {
-      const current = prev[postId] || 0;
-      const total = (posts.find((p) => (p._id || p.id) === postId)?.comments || []).length;
-      const next = Math.min(total, current + 5);
-      return { ...prev, [postId]: next };
-    });
-  }, [posts]);
+  // Render search results dropdown
+  const renderSearchResults = () => {
+    if (!showSearchResults || searchResults.length === 0) return null;
 
-  // Share functionality
-  const handleOpenShare = useCallback((postId) => {
-    setSharePostId(postId);
-    setShowShareModal(true);
-  }, []);
+    return (
+      <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-[10px] mt-1 shadow-lg max-h-60 overflow-y-auto z-50">
+        {searchResults.map((user, idx) => {
+          const buttonInfo = getFollowButtonInfo(user);
 
-  const handleShareToUser = useCallback(async (targetUserId) => {
-    alert('Share feature coming soon!');
-    setShowShareModal(false);
-    setSharePostId(null);
-  }, []);
+          // Skip current user from results
+          if (user._id === currentUser?._id || user.username === currentUser?.username) return null;
 
-  
+          // Determine a stable key and navigation id for local suggestions
+          const keyId = user._id || user.username || `search-${idx}`;
+          const isLocal = !!user._local || (typeof user._id === 'string' && user._id.startsWith('local-'));
+          const routeId = isLocal ? (user.username || String(user._id || '').replace(/^local-/, '')) : user._id;
 
-  const getUserDisplayName = useCallback((post) => {
-    const user = getUserFromPost(post);
-    const username = `${userName}` || user.name || user.fullName || user.displayName || user.email || 'Community Member';
-    return username;
-  }, [getUserFromPost]);
+          return (
+            <div key={`${keyId}-${idx}`} className="p-3 border-b border-gray-200 hover:bg-gray-50 flex items-center justify-between">
+              <div 
+                className="flex items-center gap-3 flex-1 cursor-pointer"
+                onClick={() => {
+                  // For local suggestions navigate using username fallback
+                  if (routeId) navigate(`/profile/${routeId}`);
+                }}
+              >
+                <img 
+                  src={getImageSrc(user.profilePhotoUrl || user.profilePhoto || user.avatar || user.image)} 
+                  alt={user.username || 'user'}
+                  className="w-8 h-8 rounded-full object-cover"
+                  onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
+                />
+                <div>
+                  <p className="font-semibold">{user.username || (user._id || '').replace(/^local-/, '')}</p>
+                  {user.name && (
+                    <p className="text-sm text-gray-500">{user.name}</p>
+                  )}
+                </div>
+              </div>
+              
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFollowRequest(user);
+                }}
+                disabled={buttonInfo.disabled || followLoading}
+                className={buttonInfo.className}
+              >
+                {followLoading && (user._id === currentUser?._id) ? 'Sending...' : buttonInfo.text}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
-  const getUserProfilePhoto = useCallback((post) => {
-    const user = getUserFromPost(post);
-    return getImageSrc( `${userProfilePhoto}` || user.profilePhotoUrl || user.avatar || user.image || user.picture);
-  }, [getUserFromPost, getImageSrc]);
-
-  const getCommentUser = useCallback((comment) => {
-    if (comment.user && typeof comment.user === 'object') return comment.user;
-    if (comment.author && typeof comment.author === 'object') return comment.author;
-    if (comment.commentedBy && typeof comment.commentedBy === 'object') return comment.commentedBy;
-    return {};
-  }, []);
-
-  const getCommentUserName = useCallback((comment) => {
-    const user = getCommentUser(comment);
-    return user.username || user.name || user.fullName || user.displayName || user.email || 'User';
-  }, [getCommentUser]);
-
-  const getCommentUserPhoto = useCallback((comment) => {
-    const user = getCommentUser(comment);
-    return getImageSrc(`${userProfilePhoto}` || user.profilePhotoUrl || user.avatar || user.image);
-  }, [getCommentUser, getImageSrc]);
-
-  // Memoize posts data to prevent unnecessary re-renders
-  const postsData = useMemo(() => posts.map(post => {
-    const postId = post._id || post.id;
-    const hasLiked = hasUserLikedPost(post);
-    const likeCount = getLikeCount(post);
-    const isLiking = isLikingPost(postId);
-    
-    console.log(`Post ${postId} like status:`, {
-      hasLiked,
-      likeCount,
-      isLiking,
-      fromOverride: !!likeOverrides[postId],
-      fromRedux: likeStates[postId]?.isLikedByUser
-    });
-
-    return {
-      post,
-      postId,
-      userDisplayName: getUserDisplayName(post),
-      userProfilePhoto: getUserProfilePhoto(post),
-      hasLiked,
-      likeCount,
-      isLiking,
-    };
-  }), [posts, getUserDisplayName, getUserProfilePhoto, hasUserLikedPost, getLikeCount, isLikingPost, likeOverrides, likeStates]);
+  // ========== MAIN COMPONENT RENDER ==========
 
   return (
     <>
@@ -674,118 +533,83 @@ const Home = () => {
         {/* Navigation */}
         <nav id='nav' className="fixed z-[1000] w-full h-[10vh] flex bg-white rounded-[5px] shadow-[rgba(0,0,0,0.45)_0px_25px_20px_-20px]">
           <aside id='as1' className="flex-[30%]">
-            <h1 className="font-bold text-[35px] ml-[30px] mt-[12px] bg-gradient-to-r from-[rgb(0,98,255)] via-[rgb(128,0,119)] to-pink bg-clip-text text-transparent">SocialMedia</h1>
+            <h1 className="font-bold text-[35px] ml-[30px] mt-[12px] bg-gradient-to-r from-[rgb(0,98,255)] via-[rgb(128,0,119)] to-pink bg-clip-text text-transparent">
+              SocialMedia
+            </h1>
           </aside>
+          
           <aside id='as2' className="flex-[30%] flex justify-center items-center relative" ref={searchRef}>
             <div id='searchbar' className="relative w-full">
               <input 
                 type="text" 
-                placeholder='Search users...' 
-                className="border-2 border-black h-[40px] w-[30vw] rounded-[10px] pl-[15px] text-black"
-                value={searchQuery}
+                placeholder='Search users by username...' 
+                className="border-2 border-black h-[40px] w-[30vw] rounded-[10px] pl-[15px] text-black focus:outline-none focus:border-blue-500"
+                value={searchQuery.targetUsername}
                 ref={navInputRef}
                 autoComplete="off"
                 onChange={(e) => handleSearch(e.target.value)}
-                onKeyDown={async (e) => {
+                onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-
-                    // If there is exactly one search result, send a follow request to it
-                    if (Array.isArray(searchResults) && searchResults.length === 1) {
-                      const u = searchResults[0];
-                      handleFriendRequest(u._id);
-                      return;
+                    if (searchQuery.trim()) {
+                      handleFollowByUsername(searchQuery);
                     }
-
-                    // If there are no results but the user typed a non-empty query,
-                    // attempt to resolve the username on the server and send a follow request
-                    const q = (searchQuery || '').trim();
-                    if (q && (!Array.isArray(searchResults) || searchResults.length === 0)) {
-                      try {
-                        const res = await dispatch(sendFollowByUsername(q));
-                        if (res && res.type && res.type.endsWith('/fulfilled')) {
-                          // success
-                          alert('Follow request sent');
-                          setSearchQuery('');
-                          dispatch(clearSearchResults());
-                        } else {
-                          const payload = res.payload || res.error || 'Unable to send follow request';
-                          alert(typeof payload === 'string' ? payload : JSON.stringify(payload));
-                        }
-                      } catch (err) {
-                        console.error('Error sending follow by username:', err);
-                        alert('Failed to send follow request.');
-                      }
-                      return;
-                    }
-
-                    // Fallback: run a search (onChange already does this)
-                    handleSearch(searchQuery);
+                  }
+                  
+                  // Escape closes search results
+                  if (e.key === 'Escape') {
+                    dispatch(clearSearchResults());
+                    setSearchQuery({
+                      targetUsername:""
+                    });
                   }
                 }}
                 onFocus={() => {
-                  // show previous results if any when focusing
-                  if ((searchRef.current && searchRef.current.contains(document.activeElement)) === false) {
-                    // noop: keeping for potential future behavior
+                  if (searchResults.length > 0) {
+                    // Restore previous local results into search slice so dropdown can show
+                    dispatch(setLocalSearchResult(searchResults));
                   }
                 }}
               />
               <i className="fa-solid fa-magnifying-glass absolute right-3 top-1/2 transform -translate-y-1/2 text-black"></i>
               
-              {showSearchResults && searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-[10px] mt-1 shadow-lg max-h-60 overflow-y-auto z-50">
-                  {searchResults.map((user) => (
-                    <div key={user._id} className="p-3 border-b border-gray-200 hover:bg-gray-50 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <img 
-                          src={getImageSrc(user.profilePhotoUrl || user.profilePhoto || user.avatar || user.image || user.picture)} 
-                          alt={user.username}
-                          className="w-8 h-8 rounded-full object-cover"
-                          onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
-                        />
-                        <div>
-                          <p className="font-semibold">{user.username}</p>
-                          <p className="text-sm text-gray-500">{user.email}</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleFriendRequest(user._id)}
-                        disabled={user.friendStatus === 'requested' || friendRequestLoading}
-                        className={`px-3 py-1 rounded-lg text-sm ${
-                          user.friendStatus === 'requested' 
-                            ? 'bg-gray-300 text-gray-600 cursor-not-allowed' 
-                            : 'bg-blue-500 text-white hover:bg-blue-600'
-                        }`}
-                      >
-                        {user.friendStatus === 'requested' ? 'Request Sent' : 'Add Friend'}
-                      </button>
-                    </div>
-                  ))}
+              {/* Search Loading Indicator */}
+              {searchLoading && (
+                <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-[10px] mt-1 p-3 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span className="text-gray-600">Searching...</span>
+                  </div>
                 </div>
               )}
               
-              {showSearchResults && searchLoading && (
-                <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-[10px] mt-1 p-3 text-center">
-                  <p>Searching...</p>
-                </div>
-              )}
+              {/* Search Results Dropdown */}
+              {renderSearchResults()}
             </div>
           </aside>
+          
           <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
             <div className="flex gap-[35px] pr-[45px] nav_div">
-              <div className='nav_icons'><i className="fa-regular fa-house text-[25px] text-black"></i></div>
-              <div className='nav_icons'><i className="fa-regular fa-square-plus text-[25px] text-black" onClick={() => navigate("/articles")}></i></div>
+              <div className='nav_icons cursor-pointer'>
+                <i className="fa-regular fa-house text-[25px] text-black"></i>
+              </div>
+              <div className='nav_icons cursor-pointer'>
+                <i 
+                  className="fa-regular fa-square-plus text-[25px] text-black" 
+                  onClick={() => navigate("/articles")}
+                ></i>
+              </div>
               <NotificationBell />
-              <div className='nav_icons'>
+              <div className='nav_icons cursor-pointer'>
                 <img 
-                  src={`${userProfilePhoto}`} 
+                  src={userProfilePhoto} 
                   alt="User Profile" 
                   className="w-[30px] h-[30px] rounded-full object-cover border border-gray-400"
                   onClick={()=>navigate('/profile')}
                   onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
                 />
               </div>
-              <div id='theme' className="border-2 border-black flex justify-center items-center h-[25px] w-[25px] rounded-full">
+              <div id='theme' className="border-2 border-black flex justify-center items-center h-[25px] w-[25px] rounded-full cursor-pointer">
                 <i className="fa-regular fa-moon text-[16px] text-black"></i>
               </div>
             </div>
@@ -1056,7 +880,7 @@ const Home = () => {
                       />
                       <div>
                         <h3 className="font-semibold text-gray-800">
-                          {userDisplayName}
+                          {userName}
                         </h3>
                         <p className="text-sm text-gray-500">
                           {post.createdAt ? formatTime(post.createdAt) : 'Recently'}
@@ -1157,134 +981,55 @@ const Home = () => {
 
           {/* Suggestions Sidebar */}
           <aside id='suggestions' className="bg-white rounded-[15px] flex-[21%] h-min pb-6 shadow-lg">
-            <div className="p-4 border-b border-gray-200">
-              <h2 className="text-xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
-                Suggestions
-              </h2>
-              <p className="text-gray-600 text-sm mt-1">People you may know</p>
-            </div>
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="text-xl font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
+              Suggestions
+            </h2>
+            <p className="text-gray-600 text-sm mt-1">People you may know</p>
+          </div>
 
-            <div className="p-4 space-y-3">
-              {searchResults.slice(0, 4).map((user) => (
-                <div key={user._id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+          <div className="p-4 space-y-3">
+            {searchResults.slice(0, 4).map((user, idx) => {
+              const buttonInfo = getFollowButtonInfo(user);
+              if (user._id === currentUser?._id || user.username === currentUser?.username) return null;
+
+              const keyId = user._id || user.username || `suggest-${idx}`;
+              const isLocal = !!user._local || (typeof user._id === 'string' && user._id.startsWith('local-'));
+              const routeId = isLocal ? (user.username || String(user._id || '').replace(/^local-/, '')) : user._id;
+
+              return (
+                <div key={`${keyId}-${idx}`} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
                   <img 
                     src={getImageSrc(user.profilePhotoUrl || user.profilePhoto)} 
-                    alt={user.username} 
+                    alt={user.username || 'user'} 
                     className="w-12 h-12 rounded-full object-cover border border-gray-300"
+                    onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
                   />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-800 truncate">{user.username}</h3>
-                    <p className="text-gray-500 text-sm truncate">3 mutual friends</p>
+                  <div className="flex-1 min-w-0" onClick={() => { if (routeId) navigate(`/profile/${routeId}`); }}>
+                    <h3 className="font-semibold text-gray-800 truncate">{user.username || (user._id || '').replace(/^local-/, '')}</h3>
+                    {user.name && (
+                      <p className="text-gray-500 text-sm truncate">{user.name}</p>
+                    )}
                   </div>
                   <button 
-                    onClick={() => handleFriendRequest(user._id)}
-                    disabled={user.friendStatus === 'requested' || friendRequestLoading}
-                    className={`px-3 py-1 rounded-lg text-sm text-white transition-colors ${
-                      user.friendStatus === 'requested' 
-                        ? 'bg-gray-400 cursor-not-allowed' 
-                        : 'bg-gradient-to-r from-blue-500 to-purple-500 hover:opacity-90'
-                    }`}
+                    onClick={() => handleFollowRequest(user)}
+                    disabled={buttonInfo.disabled || followLoading}
+                    className={buttonInfo.className}
                   >
-                    {user.friendStatus === 'requested' ? 'Sent' : 'Follow'}
+                    {buttonInfo.text}
                   </button>
                 </div>
-              ))}
-              
-              {searchResults.length === 0 && (
-                <>
-                  {[1, 2, 3].map((item) => (
-                    <div key={item} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                      <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
-                        <i className="fa-regular fa-user text-gray-400"></i>
-                      </div>
-                      <div className="flex-1">
-                        <div className="h-4 bg-gray-200 rounded w-20 mb-2"></div>
-                        <div className="h-3 bg-gray-100 rounded w-16"></div>
-                      </div>
-                      <button className="px-3 py-1 rounded-lg text-sm bg-gray-200 text-gray-500 cursor-not-allowed">
-                        Follow
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-
-            {/* Recent Activities */}
-            <div className="mt-6 px-4">
-              <h3 className="font-semibold text-gray-800 mb-3">Recent Activity</h3>
-              <div className="space-y-3">
-                {posts.slice(0, 3).map((post) => (
-                  <div key={post._id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                    <img 
-                      src={getImageSrc(post.user?.profilePhotoUrl || post.user?.profilePhoto) || userPhoto} 
-                      alt={post.user?.username || 'User'} 
-                      className="w-8 h-8 rounded-full object-cover"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-700 truncate">
-                        <span className="font-semibold">{getUserDisplayName(post)}</span> posted
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {post.createdAt ? formatTime(post.createdAt) : 'Just now'}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {posts.length === 0 && (
-                  <p className="text-gray-500 text-sm text-center p-4">No recent activity</p>
-                )}
-              </div>
-            </div>
-          </aside>
-        </section>
-
-        {/* Share Modal */}
-        {showShareModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-[2500]">
-            <div className="bg-white rounded-lg w-full max-w-md mx-4">
-              <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Share Post</h3>
-                <button 
-                  onClick={() => { setShowShareModal(false); setSharePostId(null); }} 
-                  className="text-gray-600 hover:text-gray-800"
-                >
-                  <i className="fa-solid fa-times"></i>
-                </button>
-              </div>
-              <div className="max-h-72 overflow-y-auto p-4">
-                {friends.length === 0 ? (
-                  <div className="text-center py-8">
-                    <i className="fa-regular fa-users text-3xl text-gray-400 mb-3"></i>
-                    <p className="text-gray-500">No friends to share with.</p>
-                  </div>
-                ) : (
-                  friends.map((friend) => (
-                    <div key={friend._id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
-                      <div className="flex items-center gap-3">
-                        <img 
-                          src={getImageSrc(friend.profilePhotoUrl || friend.profilePhoto) || userPhoto} 
-                          alt={friend.username} 
-                          className="w-10 h-10 rounded-full object-cover" 
-                        />
-                        <div>
-                          <div className="font-semibold">{friend.username}</div>
-                          <div className="text-xs text-gray-500">{friend.email}</div>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleShareToUser(friend._id)} 
-                        className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
-                      >
-                        Share
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+              );
+            })}
+            
+            {searchResults.length === 0 && (
+              <p className="text-gray-500 text-sm text-center p-4">
+                Search for users to see suggestions
+              </p>
+            )}
           </div>
-        )}
+        </aside>
+        </section>
       </main>
     </>
   );

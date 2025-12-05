@@ -11,13 +11,30 @@ export const searchUsers = createAsyncThunk(
 		try {
 			const token = localStorage.getItem('authToken');
 			connectSocket(token);
-			// Expect server to listen to 'users:search' and ack with { users: [...] } or an array
-			const res = await emitWithAck('users:search', { q: searchQuery }, 10000);
-			// Debug: log raw socket response to help map server shapes
-			console.log('searchUsers: raw socket response for', searchQuery, res);
-			// Normalize: server may return array or { users }
-			const users = Array.isArray(res) ? res : (res?.users || []);
-			return { users };
+			console.log(searchQuery);
+			
+			// Try socket-based search first (preferred)
+			try {
+				const res = await emitWithAck('users:search', { "targetUsername": searchQuery }, 8000);
+				console.log('searchUsers: raw socket response for', searchQuery, res);
+				const users = Array.isArray(res) ? res : (res?.users || res?.results || []);
+				if (users && users.length) return { users };
+				// fallthrough to HTTP fallback if no users returned
+			} catch (socketErr) {
+				console.warn('searchUsers: socket search failed, falling back to HTTP', socketErr?.message || socketErr);
+			}
+
+			// HTTP fallback: some backends may provide REST search
+			try {
+				const headers = token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+				const resp = await axios.post(`${API_BASE_URL}/users/search`, { q: searchQuery }, { headers, timeout: 8000 });
+				const users = Array.isArray(resp.data) ? resp.data : (resp.data?.users || resp.data?.results || []);
+				console.log('searchUsers: HTTP fallback response', users);
+				return { users };
+			} catch (httpErr) {
+				console.warn('searchUsers: HTTP fallback failed', httpErr?.response?.data || httpErr.message || httpErr);
+				throw httpErr;
+			}
 		} catch (error) {
 			const msg = (error && (error.message || error?.toString())) || 'Search failed';
 			return rejectWithValue(msg);
@@ -28,13 +45,15 @@ export const searchUsers = createAsyncThunk(
 // Send friend request async thunk (use follow/send-request)
 export const sendFriendRequest = createAsyncThunk(
 	'search/sendFriendRequest',
-	async (targetUserId, { rejectWithValue }) => {
+	async (payload, { rejectWithValue }) => {
+		console.log(payload);
+		
 		try {
 			const token = localStorage.getItem('authToken');
 			// Use REST endpoint to send follow request
 			const response = await axios.post(
 				`${API_BASE_URL}/follow/send-request`,
-				{ targetUserId },
+				payload,
 				{
 					headers: token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
 					timeout: 8000,
