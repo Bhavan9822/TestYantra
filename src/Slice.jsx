@@ -11,7 +11,7 @@ import axios from 'axios';
  *
  * Update BACKEND_BASE if your uploads are served from a different domain.
  */
-const BACKEND_BASE = 'https://robo-1-qqhu.onrender.com';
+const BACKEND_BASE = 'https://robo-zv8u.onrender.com';
 const API_BASE = `${BACKEND_BASE}/api`;
 
 /**

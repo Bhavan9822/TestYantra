@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { connectSocket, emitWithAck } from './socket';
 
-const API_BASE_URL = 'https://robo-1-qqhu.onrender.com/api';
+const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
 // Thunk: send follow request by username. Uses the search endpoint to resolve username -> id,
 // then calls the friend request endpoint. This is a best-effort helper for front-end flows.
@@ -17,7 +17,8 @@ export const sendFollowByUsername = createAsyncThunk(
 
       // Try multiple search variants to be tolerant of backend event names/shape
       const searchVariants = [
-        { event: 'users:search', payload: { q: userName } },
+        { event: 'users:search', payload: { targetUsername: userName, q: userName, username: userName } },
+        { event: 'users:search', payload: { targetUsername: userName } },
         { event: 'users:search', payload: { username: userName } },
         { event: 'users:find', payload: { username: userName } },
         { event: 'user:find', payload: { username: userName } },
@@ -29,7 +30,9 @@ export const sendFollowByUsername = createAsyncThunk(
       const debugResponses = [];
       for (const v of searchVariants) {
         try {
+          console.log('[sendFollowByUsername] emitWithAck ->', v.event, 'payload=', v.payload);
           const resp = await emitWithAck(v.event, v.payload, 8000);
+          console.log('[sendFollowByUsername] emitWithAck response for', v.event, resp);
           debugResponses.push({ variant: v, resp });
           // normalize response into array of users
           if (!resp) continue;
@@ -51,7 +54,9 @@ export const sendFollowByUsername = createAsyncThunk(
 
           if (users.length) break; // stop when we have results
         } catch (e) {
-          // ignore and try next variant
+          // record error and try next variant
+          console.log('[sendFollowByUsername] emitWithAck error for', v.event, e?.message || e);
+          debugResponses.push({ variant: v, error: e?.message || String(e) });
           continue;
         }
       }
