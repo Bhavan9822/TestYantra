@@ -1,27 +1,4 @@
-// // store.js
-// import { configureStore } from '@reduxjs/toolkit';
-// import authReducer from './Slice';
-// import articlesReducer from './ArticlesSlice'; // Make sure this name matches
-// import searchReducer from './SearchSlice';
-// import likeReducer from './LikeSlice';
-// import commentReducer from './CommentSlice';
-// import notificationReducer from './NotificationSlice';
-// import followReducer from './FollowSendSlice';
-// import usersReducer from './usersSlice';
 
-// const store = configureStore({
-//   reducer: {
-//     comments: commentReducer,
-//     likes: likeReducer,
-//     notifications: notificationReducer,
-//     follow: followReducer,
-//     users: usersReducer,
-//     auth: authReducer,
-//     articles: articlesReducer, // This should be 'articles' not 'posts'
-//     search: searchReducer,
-//   },
-// });
-// export default store;
 
 // !!!!!!!!!!!!!!!!!
 
@@ -34,7 +11,6 @@ import likeReducer from './LikeSlice';
 import commentReducer from './CommentSlice';
 import notificationReducer from './NotificationSlice';
 import followReducer from './FollowSendSlice';
-import usersReducer from './usersSlice'; // NEW: Your users slice
 
 const store = configureStore({
   reducer: {
@@ -45,7 +21,6 @@ const store = configureStore({
     comments: commentReducer,
     notifications: notificationReducer,
     follow: followReducer,
-    users: usersReducer, // This is important for the new users slice
   },
   
   // Optional middleware configuration
@@ -63,3 +38,4 @@ const store = configureStore({
 });
 
 export default store;
+export { store };

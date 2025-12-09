@@ -1,22 +1,23 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { connectSocket, on as socketOn, off as socketOff } from './socket';
+import socketService from './socket';
 
 const API_BASE = 'https://robo-zv8u.onrender.com/api';
 
 // POST /api/follow/send-request
 export const sendFollowRequest = createAsyncThunk(
 	'search/sendFollowRequest',
-	async (targetUsername, { rejectWithValue }) => {
-		console.log(targetUsername);
+	async (payloadObj, { rejectWithValue }) => {
+		const targetUsername = payloadObj?.targetUsername || payloadObj;
+		console.log('[search.sendFollowRequest] targetUsername=', targetUsername);
 		
 		try {
 
 			const token = localStorage.getItem('authToken');
 			const headers = token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
 
-			console.log(targetUsername);
-			const resp = await axios.post(`${API_BASE}/follow/send-request`, targetUsername, { headers, timeout: 10000 });
+			console.log('[search.sendFollowRequest] REST POST payload=', { targetUsername });
+			const resp = await axios.post(`${API_BASE}/follow/send-request`, { targetUsername }, { headers, timeout: 10000 });
 			console.log('[search.sendFollowRequest] REST response=', { status: resp.status, data: resp.data });
 			return resp.data || { success: true };
 		} catch (err) {
@@ -32,7 +33,11 @@ export const startSearchSocket = createAsyncThunk(
 	async (_, { dispatch }) => {
 		try {
 			const token = localStorage.getItem('authToken');
-			const socket = connectSocket(token);
+			
+			// Ensure socket is connected
+			if (!socketService.isConnected()) {
+				socketService.connect();
+			}
 
 			// Listen for followRequestReceived and dispatch into the slice
 			const onFollowReceived = (payload) => {
@@ -43,14 +48,12 @@ export const startSearchSocket = createAsyncThunk(
 				}
 			};
 
-			if (socket) {
-				socketOn('followRequestReceived', onFollowReceived);
-			}
+			socketService.on('followRequestReceived', onFollowReceived);
 
 			// Return a cleanup function so consumers can unsubscribe if needed
 			return () => {
 				try {
-					socketOff('followRequestReceived', onFollowReceived);
+					socketService.off('followRequestReceived', onFollowReceived);
 				} catch (e) {}
 			};
 		} catch (e) {

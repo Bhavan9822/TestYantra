@@ -1,19 +1,8 @@
-// Home.jsx - UPDATED VERSION
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { 
-  searchUsers,
-  clearSearchResults,
-  setShowSearchResults,
-  addLocalSearchResult,
-  sendFollowByUsername,
-  updateUserFollowStatus,
-  followRequestReceived,
-  fetchAllUsers
-} from '../usersSlice';
 import NotificationBell from '../component/NotificationBell';
-import { connectSocket, on as socketOn, joinRoom } from '../socket';
+import socketService from '../socket';
 import { addFollowRequestNotification, addLikeNotification } from '../NotificationSlice';
 import { createPost, fetchPosts } from '../ArticlesSlice';
 import { toggleLike, optimisticToggleLike } from '../LikeSlice';
@@ -49,15 +38,7 @@ const Home = () => {
   const searchRef = useRef(null);
   const navInputRef = useRef(null);
   const chatContainerRef = useRef(null);
-  const [inp,setinp]=useState("")
   const defaultImage = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnnA_0pG5u9vFP1v9a2DKaqVMCEL_0-FXjkduD2ZzgSm14wJy-tcGygo_HZX_2bzMHF8I&usqp=CAU";
-  const handelFollow=(e)=>{
-    setinp(e.target.value);
-  }
-  const handelfollowsubmit=(e)=>{
-    e.preventDefault();
-    dispatch(sendFollowRequest({"targetUsername": inp }));
-  }
   const getImageSrc = useCallback((photo) => {
     // ... (keep your existing getImageSrc function)
     if (!photo) return defaultImage;
@@ -239,7 +220,9 @@ const Home = () => {
         // Emit socket event for real-time notification
         try {
           const token = localStorage.getItem('authToken');
-          connectSocket(token);
+          if (!socketService.isConnected()) {
+            socketService.connect();
+          }
         } catch (socketErr) {
           console.warn('Socket notification failed:', socketErr);
         }
@@ -291,18 +274,18 @@ const Home = () => {
     // Setup socket connection and listeners
     try {
       const token = localStorage.getItem('authToken');
-      connectSocket(token);
+      if (!socketService.isConnected()) {
+        socketService.connect();
+      }
       
       // Join user's personal room
       const userId = currentUser?._id || currentUser?.id;
       if (userId) {
-        joinRoom(`user:${userId}`).catch((err) => 
-          console.warn('joinRoom failed', err)
-        );
+        socketService.getSocket()?.emit('joinRoom', `user:${userId}`);
       }
 
       // Listen for incoming follow requests
-      const offFollowRequest = socketOn('followRequestReceived', (payload) => {
+      const offFollowRequest = (payload) => {
         try {
           console.log('Received followRequestReceived via socket:', payload);
           
@@ -317,10 +300,11 @@ const Home = () => {
         } catch (e) {
           console.warn('Error handling followRequestReceived', e);
         }
-      });
+      };
+      socketService.on('followRequestReceived', offFollowRequest);
 
       // Listen for follow request acceptance
-      const offFollowAccepted = socketOn('followRequestAccepted', (payload) => {
+      const offFollowAccepted = (payload) => {
         try {
           console.log('Follow request accepted:', payload);
           
@@ -336,13 +320,14 @@ const Home = () => {
         } catch (e) {
           console.warn('Error handling followRequestAccepted', e);
         }
-      });
+      };
+      socketService.on('followRequestAccepted', offFollowAccepted);
 
       return () => {
         // Cleanup socket listeners
         try { 
-          if (offFollowRequest) offFollowRequest(); 
-          if (offFollowAccepted) offFollowAccepted(); 
+          socketService.off('followRequestReceived', offFollowRequest);
+          socketService.off('followRequestAccepted', offFollowAccepted);
         } catch (e) {}
       };
     } catch (e) {

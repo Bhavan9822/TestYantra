@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { connectSocket, emitWithAck } from './socket';
+import socketService from './socket';
+import { emitWithAck } from './socketUtils';
 
 const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
@@ -13,7 +14,10 @@ export const sendFollowByUsername = createAsyncThunk(
       const token = localStorage.getItem('authToken');
       if (!userName || typeof userName !== 'string') return rejectWithValue('Username required');
 
-      connectSocket(token);
+      // Ensure socket is connected
+      if (!socketService.isConnected()) {
+        socketService.connect();
+      }
 
       // Try multiple search variants to be tolerant of backend event names/shape
       const searchVariants = [
