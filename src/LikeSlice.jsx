@@ -3,7 +3,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { addLikeNotification } from './NotificationSlice';
 
-const API_BASE_URL = 'https://robo-1-qqhu.onrender.com/api';
+const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
 // Enhanced debug logging
 const log = (type, message, data = {}) => {

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { updatePostOptimistically } from './ArticlesSlice';
 import { addCommentNotification } from './NotificationSlice';
 
-const API_BASE_URL = 'https://robo-1-qqhu.onrender.com/api';
+const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
 // Fetch paginated comments for an article (page starting at 1)
 export const fetchComments = createAsyncThunk(

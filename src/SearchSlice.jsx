@@ -1,270 +1,109 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { emitWithAck, connectSocket } from './socket';
 import axios from 'axios';
+import { connectSocket, on as socketOn, off as socketOff } from './socket';
 
-const API_BASE_URL = 'https://robo-1-qqhu.onrender.com/api';
+const API_BASE = 'https://robo-zv8u.onrender.com/api';
 
-// Search users async thunk (via socket.io)
-export const searchUsers = createAsyncThunk(
-	'search/searchUsers',
-	async (searchQuery, { rejectWithValue }) => {
-		try {
-			const token = localStorage.getItem('authToken');
-			connectSocket(token);
-			console.log(searchQuery);
-			
-			// Try socket-based search first (preferred)
-			try {
-				const res = await emitWithAck('users:search', { "targetUsername": searchQuery }, 8000);
-				console.log('searchUsers: raw socket response for', searchQuery, res);
-				const users = Array.isArray(res) ? res : (res?.users || res?.results || []);
-				if (users && users.length) return { users };
-				// fallthrough to HTTP fallback if no users returned
-			} catch (socketErr) {
-				console.warn('searchUsers: socket search failed, falling back to HTTP', socketErr?.message || socketErr);
-			}
-
-			// HTTP fallback: some backends may provide REST search
-			try {
-				const headers = token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
-				const resp = await axios.post(`${API_BASE_URL}/users/search`, { q: searchQuery }, { headers, timeout: 8000 });
-				const users = Array.isArray(resp.data) ? resp.data : (resp.data?.users || resp.data?.results || []);
-				console.log('searchUsers: HTTP fallback response', users);
-				return { users };
-			} catch (httpErr) {
-				console.warn('searchUsers: HTTP fallback failed', httpErr?.response?.data || httpErr.message || httpErr);
-				throw httpErr;
-			}
-		} catch (error) {
-			const msg = (error && (error.message || error?.toString())) || 'Search failed';
-			return rejectWithValue(msg);
-		}
-	}
-);
-
-// Send friend request async thunk (use follow/send-request)
-export const sendFriendRequest = createAsyncThunk(
-	'search/sendFriendRequest',
-	async (payload, { rejectWithValue }) => {
-		console.log(payload);
+// POST /api/follow/send-request
+export const sendFollowRequest = createAsyncThunk(
+	'search/sendFollowRequest',
+	async (targetUsername, { rejectWithValue }) => {
+		console.log(targetUsername);
 		
 		try {
+
 			const token = localStorage.getItem('authToken');
-			// Use REST endpoint to send follow request
-			const response = await axios.post(
-				`${API_BASE_URL}/follow/send-request`,
-				payload,
-				{
-					headers: token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
-					timeout: 8000,
+			const headers = token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+
+			console.log(targetUsername);
+			const resp = await axios.post(`${API_BASE}/follow/send-request`, targetUsername, { headers, timeout: 10000 });
+			console.log('[search.sendFollowRequest] REST response=', { status: resp.status, data: resp.data });
+			return resp.data || { success: true };
+		} catch (err) {
+			const message = err?.response?.data?.message || err?.message || 'Failed to send follow request';
+			return rejectWithValue(message);
+		}
+	}
+);
+
+// Start socket listeners for follow notifications
+export const startSearchSocket = createAsyncThunk(
+	'search/startSocket',
+	async (_, { dispatch }) => {
+		try {
+			const token = localStorage.getItem('authToken');
+			const socket = connectSocket(token);
+
+			// Listen for followRequestReceived and dispatch into the slice
+			const onFollowReceived = (payload) => {
+				try {
+					dispatch(addFollowNotification(payload));
+				} catch (e) {
+					console.warn('startSearchSocket: dispatch failed', e);
 				}
-			);
-			return { targetUserId, data: response.data };
-		} catch (error) {
-			const msg = error?.response?.data?.message || (error && (error.message || error?.toString())) || 'Failed to send friend request';
-			return rejectWithValue(msg);
+			};
+
+			if (socket) {
+				socketOn('followRequestReceived', onFollowReceived);
+			}
+
+			// Return a cleanup function so consumers can unsubscribe if needed
+			return () => {
+				try {
+					socketOff('followRequestReceived', onFollowReceived);
+				} catch (e) {}
+			};
+		} catch (e) {
+			console.warn('startSearchSocket failed', e);
+			return null;
 		}
 	}
 );
 
-// Get friends list async thunk (POST)
-export const getFriends = createAsyncThunk(
-	'search/getFriends',
-	async (_, { rejectWithValue }) => {
-		try {
-			const token = localStorage.getItem('authToken');
-			connectSocket(token);
-			const res = await emitWithAck('friends:list', {}, 10000);
-			// normalize to { friends }
-			const friends = Array.isArray(res) ? res : (res?.friends || []);
-			return { friends };
-		} catch (error) {
-			const msg = (error && (error.message || error?.toString())) || 'Failed to fetch friends';
-			return rejectWithValue(msg);
-		}
-	}
-);
-
-// Get chat messages async thunk (POST)
-export const getChatMessages = createAsyncThunk(
-	'search/getChatMessages',
-	async (friendId, { rejectWithValue }) => {
-		try {
-			const token = localStorage.getItem('authToken');
-			connectSocket(token);
-			const res = await emitWithAck('chat:messages', { friendId }, 10000);
-			const messages = res?.messages || res || [];
-			return { messages };
-		} catch (error) {
-			const msg = (error && (error.message || error?.toString())) || 'Failed to fetch messages';
-			return rejectWithValue(msg);
-		}
-	}
-);
-
-// Send message async thunk
-export const sendMessage = createAsyncThunk(
-	'search/sendMessage',
-	async ({ friendId, message }, { rejectWithValue }) => {
-		try {
-			const token = localStorage.getItem('authToken');
-			connectSocket(token);
-			const res = await emitWithAck('chat:send', { friendId, message }, 10000);
-			return res;
-		} catch (error) {
-			const msg = (error && (error.message || error?.toString())) || 'Failed to send message';
-			return rejectWithValue(msg);
-		}
-	}
-);
+const initialState = {
+	notifications: [],
+	sendingFollow: false,
+	sendFollowError: null,
+};
 
 const searchSlice = createSlice({
 	name: 'search',
-	initialState: {
-		searchResults: [],
-		searchLoading: false,
-		searchError: null,
-		friends: [],
-		friendsLoading: false,
-		friendsError: null,
-		activeChat: null,
-		chatMessages: [],
-		chatLoading: false,
-		chatError: null,
-		showSearchResults: false,
-		friendRequestLoading: false,
-	},
+	initialState,
 	reducers: {
-		clearSearchResults: (state) => {
-			state.searchResults = [];
-			state.showSearchResults = false;
-		},
-		setLocalSearchResult: (state, action) => {
+		addFollowNotification(state, action) {
+			// payload expected to be { sender: { username, _id, ... }, ... }
 			const payload = action.payload;
-			if (!payload) {
-				state.searchResults = [];
-				state.showSearchResults = false;
-				return;
-			}
-
-			if (typeof payload === 'string') {
-				const username = payload.trim();
-				if (!username) {
-					state.searchResults = [];
-					state.showSearchResults = false;
-					return;
-				}
-				const localUser = {
-					_id: `local-${username}`,
-					username,
-					email: '',
-					friendStatus: null,
-					_local: true,
-				};
-				state.searchResults = [localUser];
-				state.showSearchResults = true;
-				return;
-			}
-
-			if (typeof payload === 'object') {
-				const user = {
-					_id: payload._id || payload.id || `local-${payload.username}`,
-					username: payload.username || payload.name || '',
-					email: payload.email || '',
-					friendStatus: payload.friendStatus || null,
-					_local: payload._local || false,
-				};
-				state.searchResults = [user];
-				state.showSearchResults = true;
-				return;
-			}
-
-			state.searchResults = [];
-			state.showSearchResults = false;
+			if (!payload) return;
+			state.notifications.unshift({
+				id: payload._id || `${Date.now()}-${Math.random()}`,
+				type: 'follow_request',
+				receivedAt: Date.now(),
+				payload,
+			});
 		},
-		sendFriendRequestLocal: (state, action) => {
-			const targetId = action.payload;
-			const idx = state.searchResults.findIndex(u => u._id === targetId);
-			if (idx !== -1) {
-				state.searchResults[idx].friendStatus = 'requested';
-			}
+		clearNotifications(state) {
+			state.notifications = [];
 		},
-		setActiveChat: (state, action) => {
-			state.activeChat = action.payload;
-		},
-		closeSearchResults: (state) => {
-			state.showSearchResults = false;
-		},
-		addMessage: (state, action) => {
-			state.chatMessages.push(action.payload);
-		},
-		clearChat: (state) => {
-			state.activeChat = null;
-			state.chatMessages = [];
+		removeNotification(state, action) {
+			const id = action.payload;
+			state.notifications = state.notifications.filter(n => n.id !== id);
 		},
 	},
 	extraReducers: (builder) => {
 		builder
-			.addCase(searchUsers.pending, (state) => {
-				state.searchLoading = true;
-				state.searchError = null;
+			.addCase(sendFollowRequest.pending, (state) => {
+				state.sendingFollow = true;
+				state.sendFollowError = null;
 			})
-			.addCase(searchUsers.fulfilled, (state, action) => {
-				state.searchLoading = false;
-				state.searchResults = action.payload?.users || action.payload || [];
-				state.showSearchResults = true;
+			.addCase(sendFollowRequest.fulfilled, (state) => {
+				state.sendingFollow = false;
 			})
-			.addCase(searchUsers.rejected, (state, action) => {
-				state.searchLoading = false;
-				state.searchError = action.payload;
-			})
-			.addCase(sendFriendRequest.pending, (state) => {
-				state.friendRequestLoading = true;
-			})
-			.addCase(sendFriendRequest.fulfilled, (state, action) => {
-				state.friendRequestLoading = false;
-				const userIndex = state.searchResults.findIndex(user => user._id === action.payload.targetUserId);
-				if (userIndex !== -1) {
-					state.searchResults[userIndex].friendStatus = 'requested';
-				}
-			})
-			.addCase(sendFriendRequest.rejected, (state) => {
-				state.friendRequestLoading = false;
-			})
-			.addCase(getFriends.pending, (state) => {
-				state.friendsLoading = true;
-				state.friendsError = null;
-			})
-			.addCase(getFriends.fulfilled, (state, action) => {
-				state.friendsLoading = false;
-				state.friends = action.payload?.friends || action.payload || [];
-			})
-			.addCase(getFriends.rejected, (state, action) => {
-				state.friendsLoading = false;
-				state.friendsError = action.payload;
-			})
-			.addCase(getChatMessages.pending, (state) => {
-				state.chatLoading = true;
-				state.chatError = null;
-			})
-			.addCase(getChatMessages.fulfilled, (state, action) => {
-				state.chatLoading = false;
-				state.chatMessages = action.payload?.messages || action.payload || [];
-			})
-			.addCase(getChatMessages.rejected, (state, action) => {
-				state.chatLoading = false;
-				state.chatError = action.payload;
+			.addCase(sendFollowRequest.rejected, (state, action) => {
+				state.sendingFollow = false;
+				state.sendFollowError = action.payload || action.error?.message || 'Failed to send follow request';
 			});
 	},
 });
 
-export const {
-	clearSearchResults,
-	setLocalSearchResult,
-	sendFriendRequestLocal,
-	setActiveChat,
-	closeSearchResults,
-	addMessage,
-	clearChat,
-} = searchSlice.actions;
+export const { addFollowNotification, clearNotifications, removeNotification } = searchSlice.actions;
 export default searchSlice.reducer;

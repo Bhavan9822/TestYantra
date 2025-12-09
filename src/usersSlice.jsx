@@ -3,7 +3,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { emitWithAck, connectSocket } from './socket';
 import axios from 'axios';
 
-const API_BASE_URL = 'https://robo-1-qqhu.onrender.com/api';
+const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
 // Search users via socket.io (since no REST endpoint)
 export const searchUsers = createAsyncThunk(
@@ -14,7 +14,10 @@ export const searchUsers = createAsyncThunk(
       connectSocket(token);
       
       // Try socket.io search first
-      const res = await emitWithAck('users:search', { q: searchQuery }, 10000);
+      const searchPayload = { targetUsername: searchQuery, q: searchQuery, username: searchQuery };
+      console.log('[users.searchUsers] emitWithAck users:search payload=', searchPayload);
+      const res = await emitWithAck('users:search', searchPayload, 10000);
+      console.log('[users.searchUsers] emitWithAck users:search response=', res);
       
       // Normalize response
       let users = [];
@@ -103,59 +106,6 @@ export const searchUsers = createAsyncThunk(
   }
 );
 
-// Send follow request by userId
-export const sendFollowRequest = createAsyncThunk(
-  'users/sendFollowRequest',
-  async (userId, { rejectWithValue, getState }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      
-      // Call the backend endpoint for follow requests
-      const response = await axios.post(
-        `${API_BASE_URL}/follow/send-request`,
-        { userId },  // Backend expects userId
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 8000
-        }
-      );
-      
-      return { 
-        success: true,
-        targetUserId: userId,
-        data: response.data 
-      };
-    } catch (error) {
-      console.error('Follow request error:', error);
-      
-      // If REST fails, try socket.io as fallback
-      try {
-        const token = localStorage.getItem('authToken');
-        connectSocket(token);
-        
-        const socketResult = await emitWithAck('follow:request', { 
-          targetUserId: userId 
-        }, 10000);
-        
-        return { 
-          success: true,
-          targetUserId: userId,
-          data: socketResult,
-          viaSocket: true
-        };
-      } catch (socketError) {
-        return rejectWithValue(
-          error.response?.data?.message || 
-          error.message || 
-          'Failed to send follow request'
-        );
-      }
-    }
-  }
-);
 
 // Send follow request by username (compatibility with existing code)
 export const sendFollowByUsername = createAsyncThunk(
@@ -166,7 +116,10 @@ export const sendFollowByUsername = createAsyncThunk(
       
       // First, try to find user by username via socket
       connectSocket(token);
-      const searchRes = await emitWithAck('users:search', { q: username }, 10000);
+      const searchByUsernamePayload = { targetUsername: username, q: username, username };
+      console.log('[users.sendFollowByUsername] emitWithAck users:search payload=', searchByUsernamePayload);
+      const searchRes = await emitWithAck('users:search', searchByUsernamePayload, 10000);
+      console.log('[users.sendFollowByUsername] emitWithAck users:search response=', searchRes);
       
       let users = [];
       if (Array.isArray(searchRes)) {
@@ -185,6 +138,7 @@ export const sendFollowByUsername = createAsyncThunk(
       }
       
       // Send follow request to found user
+      console.log('[users.sendFollowByUsername] REST POST payload=', { userId: user._id || user.id });
       const response = await axios.post(
         `${API_BASE_URL}/follow/send-request`,
         { userId: user._id || user.id },
@@ -196,6 +150,7 @@ export const sendFollowByUsername = createAsyncThunk(
           timeout: 8000
         }
       );
+      console.log('[users.sendFollowByUsername] REST response=', { status: response.status, data: response.data });
       
       return { 
         success: true,
@@ -278,6 +233,7 @@ const usersSlice = createSlice({
     // Update follow status for a user
     updateUserFollowStatus: (state, action) => {
       const { userId, status } = action.payload;
+      console.log('[users.updateUserFollowStatus] payload=', { userId, status });
       state.followStatus[userId] = status;
       
       // Update in search results
@@ -296,6 +252,7 @@ const usersSlice = createSlice({
     // Handle incoming follow request via socket.io
     followRequestReceived: (state, action) => {
       const request = action.payload;
+      console.log('[users.followRequestReceived] payload=', request);
       state.followRequests.push(request);
       
       // If the sender is in search results, update their status
@@ -370,26 +327,7 @@ const usersSlice = createSlice({
       })
       
       // Send Follow Request
-      .addCase(sendFollowRequest.pending, (state) => {
-        state.followLoading = true;
-        state.followError = null;
-      })
-      .addCase(sendFollowRequest.fulfilled, (state, action) => {
-        state.followLoading = false;
-        const userId = action.payload.targetUserId;
-        state.followStatus[userId] = 'requested';
-        
-        // Update in search results
-        const userIndex = state.searchResults.findIndex(user => user._id === userId);
-        if (userIndex !== -1) {
-          state.searchResults[userIndex].followStatus = 'requested';
-        }
-      })
-      .addCase(sendFollowRequest.rejected, (state, action) => {
-        state.followLoading = false;
-        state.followError = action.payload;
-      })
-      
+
       // Send Follow by Username
       .addCase(sendFollowByUsername.pending, (state) => {
         state.followLoading = true;

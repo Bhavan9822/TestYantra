@@ -127,9 +127,9 @@ const Profile = () => {
       {/* Profile Section */}
       <section className="flex flex-col items-center justify-center mt-35 px-4">
         <div
-          className="rounded-full h-40 w-40 p-[15px] shadow-2xl"
+          className="rounded-full h-38 w-38 p-[5px] shadow-2xl"
           style={{
-            background: 'linear-gradient(90deg, rgba(59,130,246,1.28), rgba(255,69,0,0.18), rgba(124,158,237,0.22), rgba(219,39,119,1.18))',
+            background: 'linear-gradient(135deg, white, rgba(255,255,255,0))',
             backdropFilter: 'blur(6px)',
             WebkitBackdropFilter: 'blur(6px)',
             border: '1px solid rgba(255,255,255,0.12)'
@@ -138,7 +138,7 @@ const Profile = () => {
           <img
             src={userPhoto}
             alt="Profile"
-            className="w-32 h-32 rounded-full object-cover bg-white/40"
+            className="w-35 h-35 rounded-full object-cover bg-white/40"
             onError={(e) => { e.target.onerror = null; e.target.src = defaultAvatar; }}
           />
         </div>

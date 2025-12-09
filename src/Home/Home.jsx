@@ -5,12 +5,13 @@ import { useSelector, useDispatch } from 'react-redux';
 import { 
   searchUsers,
   clearSearchResults,
-  setLocalSearchResult,
-  sendFriendRequest
-} from '../SearchSlice';
-import { sendFollowRequest, updateUserFollowStatus, followRequestReceived as followRequestReceivedAction } from '../usersSlice';
-import { sendFollowByUsername } from '../FollowSendSlice';
-import { getFriends, getChatMessages, sendMessage, setActiveChat } from '../SearchSlice';
+  setShowSearchResults,
+  addLocalSearchResult,
+  sendFollowByUsername,
+  updateUserFollowStatus,
+  followRequestReceived,
+  fetchAllUsers
+} from '../usersSlice';
 import NotificationBell from '../component/NotificationBell';
 import { connectSocket, on as socketOn, joinRoom } from '../socket';
 import { addFollowRequestNotification, addLikeNotification } from '../NotificationSlice';
@@ -18,6 +19,7 @@ import { createPost, fetchPosts } from '../ArticlesSlice';
 import { toggleLike, optimisticToggleLike } from '../LikeSlice';
 import { formatTime } from '../FormatTime';
 import { toast } from 'react-toastify';
+import { sendFollowRequest } from '../SearchSlice';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -47,9 +49,15 @@ const Home = () => {
   const searchRef = useRef(null);
   const navInputRef = useRef(null);
   const chatContainerRef = useRef(null);
-  
+  const [inp,setinp]=useState("")
   const defaultImage = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnnA_0pG5u9vFP1v9a2DKaqVMCEL_0-FXjkduD2ZzgSm14wJy-tcGygo_HZX_2bzMHF8I&usqp=CAU";
-  
+  const handelFollow=(e)=>{
+    setinp(e.target.value);
+  }
+  const handelfollowsubmit=(e)=>{
+    e.preventDefault();
+    dispatch(sendFollowRequest({"targetUsername": inp }));
+  }
   const getImageSrc = useCallback((photo) => {
     // ... (keep your existing getImageSrc function)
     if (!photo) return defaultImage;
@@ -119,7 +127,7 @@ const Home = () => {
   const handleSearch = useCallback((query) => {
     console.log(query);
     
-    const q = query;
+    const q = query || '';
     setSearchQuery((preVal)=>({...preVal,["targetUsername"]:q}));
 
     // Clear previous debounce timer
@@ -144,19 +152,27 @@ const Home = () => {
   // Perform the actual search
   const performSearch = useCallback(async (query) => {
     try {
-      // Dispatch the search action
-      console.log(searchQuery);
-      
-      const result = await dispatch(sendFriendRequest(searchQuery));
-      
-      if (!result.users || result.users.length === 0) {
-        toast.info('No users found');
+      // Dispatch the search action via usersSlice
+      console.log('performSearch query=', query);
+
+      const resp = await dispatch(searchUsers(query)).unwrap();
+
+      if (!resp || !resp.users || resp.users.length === 0) {
+        // If server returned no users, add a local quick-follow suggestion using the typed username
+        if (query && String(query).trim()) {
+          console.log('[performSearch] no users found, adding local suggestion for', query);
+          dispatch(addLocalSearchResult({ username: String(query).trim(), _local: true }));
+          // ensure dropdown shows
+          dispatch(setShowSearchResults(true));
+        } else {
+          toast.info('No users found');
+        }
       }
     } catch (error) {
       console.error('Search failed:', error);
       // Show a local quick-action suggestion so user can still attempt follow-by-username
       try {
-        dispatch(setLocalSearchResult(query));
+        dispatch(addLocalSearchResult({ username: query, _local: true }));
         toast.info('Search failed; showing quick follow option for entered username');
       } catch (e) {
         console.warn('Could not set local search result', e);
@@ -167,7 +183,7 @@ const Home = () => {
 
   // Handle follow request
   const handleFollowRequest = useCallback(async (user) => {
-    if (!user || !user._id) {
+    if (!user) {
       toast.error('Invalid user');
       return;
     }
@@ -178,12 +194,12 @@ const Home = () => {
       return;
     }
     // If this is a local fallback search result (no server id), use username-based follow
-    const isLocal = !!user._local || (typeof user._id === 'string' && user._id.startsWith('local-'));
+    const isLocal = !!user._local || (typeof user._id === 'string' && user._id.startsWith('local-')) || !user._id;
 
     if (isLocal) {
       // show requested state locally
       try {
-        dispatch(setLocalSearchResult({ ...user, friendStatus: 'requested', _local: true }));
+        dispatch(addLocalSearchResult({ ...user, friendStatus: 'requested', _local: true }));
       } catch (e) {
         // ignore
       }
@@ -201,7 +217,7 @@ const Home = () => {
       } catch (err) {
         console.error('Username follow failed:', err);
         // revert local UI
-        try { dispatch(setLocalSearchResult({ ...user, friendStatus: 'none', _local: true })); } catch (e) {}
+        try { dispatch(addLocalSearchResult({ ...user, friendStatus: 'none', _local: true })); } catch (e) {}
         toast.error(err || 'Failed to send follow request by username');
         return;
       }
@@ -269,7 +285,7 @@ const Home = () => {
   useEffect(() => {
     // Fetch initial data
     console.log('Home: Fetching friends and posts');
-    dispatch(getFriends());
+    dispatch(fetchAllUsers());
     dispatch(fetchPosts());
 
     // Setup socket connection and listeners
@@ -470,7 +486,37 @@ const Home = () => {
 
   // Render search results dropdown
   const renderSearchResults = () => {
-    if (!showSearchResults || searchResults.length === 0) return null;
+    if (!showSearchResults) return null;
+
+    // If there are no server results but the user typed a username, show the typed username as a suggestion
+    if ((Array.isArray(searchResults) && searchResults.length === 0) && searchQuery?.targetUsername) {
+      const username = String(searchQuery.targetUsername).trim();
+      if (!username) return null;
+      return (
+        <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-[10px] mt-1 shadow-lg max-h-60 overflow-y-auto z-50">
+          <div className="p-3 border-b border-gray-200 hover:bg-gray-50 flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1 cursor-pointer">
+              <img 
+                src={{userProfilePhoto}}
+                alt={username}
+                className="w-8 h-8 rounded-full object-cover"
+                onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
+              />
+              <div>
+                <p className="font-semibold">{username}</p>
+                <p className="text-sm text-gray-500">Search by username</p>
+              </div>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleFollowByUsername(username); }}
+              className={'px-3 py-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg text-sm hover:opacity-90'}
+            >
+              Follow
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-[10px] mt-1 shadow-lg max-h-60 overflow-y-auto z-50">
@@ -539,53 +585,10 @@ const Home = () => {
           </aside>
           
           <aside id='as2' className="flex-[30%] flex justify-center items-center relative" ref={searchRef}>
-            <div id='searchbar' className="relative w-full">
-              <input 
-                type="text" 
-                placeholder='Search users by username...' 
-                className="border-2 border-black h-[40px] w-[30vw] rounded-[10px] pl-[15px] text-black focus:outline-none focus:border-blue-500"
-                value={searchQuery.targetUsername}
-                ref={navInputRef}
-                autoComplete="off"
-                onChange={(e) => handleSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (searchQuery.trim()) {
-                      handleFollowByUsername(searchQuery);
-                    }
-                  }
-                  
-                  // Escape closes search results
-                  if (e.key === 'Escape') {
-                    dispatch(clearSearchResults());
-                    setSearchQuery({
-                      targetUsername:""
-                    });
-                  }
-                }}
-                onFocus={() => {
-                  if (searchResults.length > 0) {
-                    // Restore previous local results into search slice so dropdown can show
-                    dispatch(setLocalSearchResult(searchResults));
-                  }
-                }}
-              />
-              <i className="fa-solid fa-magnifying-glass absolute right-3 top-1/2 transform -translate-y-1/2 text-black"></i>
-              
-              {/* Search Loading Indicator */}
-              {searchLoading && (
-                <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-[10px] mt-1 p-3 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span className="text-gray-600">Searching...</span>
-                  </div>
-                </div>
-              )}
-              
-              {/* Search Results Dropdown */}
-              {renderSearchResults()}
-            </div>
+         <form action="" className='border-2 ' onSubmit={handelfollowsubmit}>
+             <input type="text" onChange={handelFollow}/>
+            <button>click</button>
+         </form>
           </aside>
           
           <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
