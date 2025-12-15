@@ -1,16 +1,43 @@
 
+import { configureStore } from "@reduxjs/toolkit";
 
-// !!!!!!!!!!!!!!!!!
+// 🔹 Reducers
+import authReducer from "./Slice"; // authSlice
+import articlesReducer from "./ArticlesSlice";
+import searchReducer from "./SearchSlice";
+import likeReducer from "./LikeSlice";
+import commentReducer from "./CommentSlice";
+import notificationReducer from "./NotificationSlice";
+import followReducer from "./FollowSendSlice";
+import usersReducer from "./usersSlice";
 
-// store.js
-import { configureStore } from '@reduxjs/toolkit';
-import authReducer from './Slice'; // This should be './features/auth/authSlice' or similar
-import articlesReducer from './ArticlesSlice';
-import searchReducer from './SearchSlice';
-import likeReducer from './LikeSlice';
-import commentReducer from './CommentSlice';
-import notificationReducer from './NotificationSlice';
-import followReducer from './FollowSendSlice';
+/**
+ * Middleware to allow dispatching actions
+ * from inside reducers (used for login → notifications sync)
+ */
+const asyncDispatchMiddleware = (store) => (next) => (action) => {
+  let syncFinished = false;
+  let actionQueue = [];
+
+  function asyncDispatch(asyncAction) {
+    actionQueue.push(asyncAction);
+    if (syncFinished) {
+      actionQueue.forEach((a) => store.dispatch(a));
+      actionQueue = [];
+    }
+  }
+
+  const actionWithAsyncDispatch = {
+    ...action,
+    asyncDispatch,
+  };
+
+  next(actionWithAsyncDispatch);
+  syncFinished = true;
+
+  actionQueue.forEach((a) => store.dispatch(a));
+  actionQueue = [];
+};
 
 const store = configureStore({
   reducer: {
@@ -21,21 +48,17 @@ const store = configureStore({
     comments: commentReducer,
     notifications: notificationReducer,
     follow: followReducer,
+    users: usersReducer,
   },
-  
-  // Optional middleware configuration
+
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
-        // Ignore these action types
-        ignoredActions: ['socket/connect'],
-        // Ignore these field paths in all actions
-        ignoredActionPaths: ['meta.arg', 'payload.timestamp'],
-        // Ignore these paths in the state
-        ignoredPaths: ['socket'],
+        ignoredActions: ["socket/connect"],
+        ignoredActionPaths: ["meta.arg", "payload.timestamp"],
+        ignoredPaths: ["socket"],
       },
-    }),
+    }).concat(asyncDispatchMiddleware),
 });
 
 export default store;
-export { store };

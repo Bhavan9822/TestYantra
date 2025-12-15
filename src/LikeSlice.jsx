@@ -1,7 +1,6 @@
 // LikeSlice.jsx
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { addLikeNotification } from './NotificationSlice';
 
 const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
@@ -72,30 +71,10 @@ export const toggleLike = createAsyncThunk(
             requestPayload: payload
           });
 
-          // Prepare notification metadata
-          const shouldNotify = !wasLikedBefore && articleOwnerId && userId !== articleOwnerId;
-          const notificationData = {
-            actor: userId,
-            targetId: articleId,
-            actorName: currentUserName || 'Someone',
-            articleTitle: articleTitle || 'Your post',
-            articleOwnerId: articleOwnerId
-          };
-
-          // Dispatch a notification action (best-effort, non-blocking)
-          try {
-            if (shouldNotify) dispatch(addLikeNotification(notificationData));
-          } catch (e) {
-            // swallow - shouldn't block the like flow
-            console.warn('LikeSlice: failed to dispatch addLikeNotification', e);
-          }
-
-          // Return additional data for the component to handle notifications if needed
+          // Return additional data for the component to handle if needed
           return {
             ...response.data,
             _requestPayload: payload, // For debugging
-            _shouldCreateNotification: shouldNotify,
-            _notificationData: notificationData
           };
         } catch (err) {
           lastError = err;
@@ -157,150 +136,6 @@ export const toggleLike = createAsyncThunk(
   }
 );
 
-// Alternative: Separate like and unlike functions
-export const addLike = createAsyncThunk(
-  'likes/addLike',
-  async ({ articleId, userId, articleOwnerId, articleTitle, currentUserName }, { rejectWithValue }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      log('info', 'Adding like', { articleId, userId, articleOwnerId });
-
-      const response = await axios.post(
-        `${API_BASE_URL}/articles/${articleId}/like`,
-        { userId },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      log('success', 'Like added successfully', response.data);
-
-      // Return additional data for notification
-      return {
-        ...response.data,
-        _shouldCreateNotification: articleOwnerId && userId !== articleOwnerId,
-        _notificationData: {
-          actor: userId,
-          targetId: articleId,
-          actorName: currentUserName || 'Someone',
-          articleTitle: articleTitle || 'Your post',
-          articleOwnerId: articleOwnerId
-        }
-      };
-    } catch (error) {
-      log('error', 'Add like failed', error.response?.data);
-      return rejectWithValue(error.response?.data || 'Failed to like article');
-    }
-  }
-);
-
-export const removeLike = createAsyncThunk(
-  'likes/removeLike',
-  async ({ articleId, userId }, { rejectWithValue }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      log('info', 'Removing like', { articleId, userId });
-
-      const response = await axios.delete(
-        `${API_BASE_URL}/articles/${articleId}/like`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          data: { userId }, // Some backends require data in DELETE
-        }
-      );
-
-      log('success', 'Like removed successfully', response.data);
-      return response.data;
-    } catch (error) {
-      log('error', 'Remove like failed', error.response?.data);
-      
-      // Try PUT method as fallback
-      try {
-        const token = localStorage.getItem('authToken');
-        const response = await axios.put(
-          `${API_BASE_URL}/articles/${articleId}/unlike`,
-          { userId },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-        
-        log('success', 'Unlike via PUT successful', response.data);
-        return response.data;
-      } catch (secondError) {
-        return rejectWithValue(secondError.response?.data || 'Failed to unlike article');
-      }
-    }
-  }
-);
-
-// Get likes for an article
-export const getArticleLikes = createAsyncThunk(
-  'likes/getArticleLikes',
-  async (articleId, { rejectWithValue }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      log('info', 'Getting article likes', { articleId });
-
-      const response = await axios.get(
-        `${API_BASE_URL}/articles/${articleId}/likes`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      log('success', 'Got article likes', response.data);
-      return { articleId, likes: response.data };
-    } catch (error) {
-      log('error', 'Get article likes failed', error.response?.data);
-      return rejectWithValue(error.response?.data || 'Failed to get likes');
-    }
-  }
-);
-
-// Check if user has liked an article
-export const checkUserLike = createAsyncThunk(
-  'likes/checkUserLike',
-  async ({ articleId, userId }, { rejectWithValue }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      log('info', 'Checking user like status', { articleId, userId });
-
-      const response = await axios.get(
-        `${API_BASE_URL}/articles/${articleId}/likes/${userId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      log('success', 'User like status checked', response.data);
-      return { articleId, userId, hasLiked: response.data.hasLiked };
-    } catch (error) {
-      const status = error?.response?.status;
-      
-      if (status === 404) {
-        log('info', 'Like status not found (treating as not liked)');
-        return { articleId, userId, hasLiked: false };
-      }
-      
-      log('error', 'Check user like failed', error.response?.data);
-      return rejectWithValue(error.response?.data || 'Failed to check like status');
-    }
-  }
-);
 
 const likeSlice = createSlice({
   name: 'likes',
@@ -453,89 +288,6 @@ const likeSlice = createSlice({
           articleId,
           error: action.payload,
         });
-      })
-      
-      // Add like
-      .addCase(addLike.pending, (state, action) => {
-        const { articleId } = action.meta.arg;
-        state.likeOperations[articleId] = true;
-        state.error = null;
-      })
-      .addCase(addLike.fulfilled, (state, action) => {
-        const { articleId } = action.meta.arg;
-        const payload = action.payload || {};
-        
-        // Extract data from various possible response formats
-        const rawLikes = payload.likes || payload.article?.likes || [];
-        const likes = Array.isArray(rawLikes) ? rawLikes : [];
-        const normalizedLikes = likes.map(l => (typeof l === 'string' ? l : (l.userId || l._id || l.id || String(l))));
-        const count = payload.likeCount ?? payload.count ?? payload.article?.likeCount ?? normalizedLikes.length;
-        
-        const timestamp = Date.now();
-
-        state.articleLikes[articleId] = {
-          likes: normalizedLikes,
-          count: Number(count) || 0,
-          isLikedByUser: true, // Since this is addLike, user definitely liked it
-          lastUpdated: timestamp,
-        };
-
-        state.userLikes[articleId] = true;
-        state.likeOperations[articleId] = false;
-        state.lastUpdated[articleId] = timestamp;
-        state.error = null;
-      })
-      .addCase(addLike.rejected, (state, action) => {
-        const { articleId } = action.meta.arg;
-        state.likeOperations[articleId] = false;
-        state.error = action.payload;
-      })
-      
-      // Get article likes
-      .addCase(getArticleLikes.pending, (state, action) => {
-        const articleId = action.meta.arg;
-        state.articleLoading[articleId] = true;
-        state.error = null;
-      })
-      .addCase(getArticleLikes.fulfilled, (state, action) => {
-        const { articleId, likes } = action.payload;
-        const timestamp = Date.now();
-        
-        state.articleLikes[articleId] = {
-          likes: Array.isArray(likes) ? likes : [],
-          count: Array.isArray(likes) ? likes.length : 0,
-          isLikedByUser: false, // Will be updated by checkUserLike
-          lastUpdated: timestamp,
-        };
-        
-        state.articleLoading[articleId] = false;
-        state.error = null;
-        state.lastUpdated[articleId] = timestamp;
-      })
-      .addCase(getArticleLikes.rejected, (state, action) => {
-        const articleId = action.meta.arg;
-        state.articleLoading[articleId] = false;
-        state.error = action.payload;
-      })
-      
-      // Check user like
-      .addCase(checkUserLike.fulfilled, (state, action) => {
-        const { articleId, hasLiked } = action.payload;
-        
-        if (!state.articleLikes[articleId]) {
-          state.articleLikes[articleId] = {
-            likes: [],
-            count: 0,
-            isLikedByUser: hasLiked,
-            lastUpdated: Date.now(),
-          };
-        } else {
-          state.articleLikes[articleId].isLikedByUser = hasLiked;
-          state.articleLikes[articleId].lastUpdated = Date.now();
-        }
-        
-        state.userLikes[articleId] = hasLiked;
-        state.lastUpdated[articleId] = Date.now();
       });
   },
 });

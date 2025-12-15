@@ -1,9 +1,19 @@
+// Home.jsx - UPDATED VERSION
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
+import { 
+  searchUsers,
+  clearSearchResults,
+  setShowSearchResults,
+  addLocalSearchResult,
+  sendFollowByUsername,
+  updateUserFollowStatus,
+  followRequestReceived,
+  fetchAllUsers
+} from '../usersSlice';
 import NotificationBell from '../component/NotificationBell';
-import socketService from '../socket';
-import { addFollowRequestNotification, addLikeNotification } from '../NotificationSlice';
+import { connectSocket, on as socketOn } from '../socket';
 import { createPost, fetchPosts } from '../ArticlesSlice';
 import { toggleLike, optimisticToggleLike } from '../LikeSlice';
 import { formatTime } from '../FormatTime';
@@ -38,7 +48,15 @@ const Home = () => {
   const searchRef = useRef(null);
   const navInputRef = useRef(null);
   const chatContainerRef = useRef(null);
+  const [inp,setinp]=useState("")
   const defaultImage = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnnA_0pG5u9vFP1v9a2DKaqVMCEL_0-FXjkduD2ZzgSm14wJy-tcGygo_HZX_2bzMHF8I&usqp=CAU";
+  const handelFollow=(e)=>{
+    setinp(e.target.value);
+  }
+  const handelfollowsubmit=(e)=>{
+    e.preventDefault();
+    dispatch(sendFollowRequest({"targetUsername": inp }));
+  }
   const getImageSrc = useCallback((photo) => {
     // ... (keep your existing getImageSrc function)
     if (!photo) return defaultImage;
@@ -93,7 +111,7 @@ const Home = () => {
     targetUsername:""
   });
   const [messageInput, setMessageInput] = useState('');
-  const [showChat, setShowChat] = useState(false);
+  // const [showChat, setShowChat] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostContent, setNewPostContent] = useState('');
@@ -220,9 +238,7 @@ const Home = () => {
         // Emit socket event for real-time notification
         try {
           const token = localStorage.getItem('authToken');
-          if (!socketService.isConnected()) {
-            socketService.connect();
-          }
+          connectSocket(token);
         } catch (socketErr) {
           console.warn('Socket notification failed:', socketErr);
         }
@@ -274,37 +290,33 @@ const Home = () => {
     // Setup socket connection and listeners
     try {
       const token = localStorage.getItem('authToken');
-      if (!socketService.isConnected()) {
-        socketService.connect();
-      }
+      connectSocket(token);
       
       // Join user's personal room
-      const userId = currentUser?._id || currentUser?.id;
-      if (userId) {
-        socketService.getSocket()?.emit('joinRoom', `user:${userId}`);
-      }
+      // const userId = currentUser?._id || currentUser?.id;
+      // if (userId) {
+      //   joinRoom(`user:${userId}`).catch((err) => 
+      //     console.warn('joinRoom failed', err)
+      //   );
+      // }
 
       // Listen for incoming follow requests
-      const offFollowRequest = (payload) => {
+      const offFollowRequest = socketOn('followRequestReceived', (payload) => {
         try {
           console.log('Received followRequestReceived via socket:', payload);
           
           // Update Redux state
           dispatch(followRequestReceivedAction(payload));
           
-          // Add notification
-          dispatch(addFollowRequestNotification(payload));
-          
           // Show toast notification
           toast.info(`New follow request from ${payload.sender?.username || 'someone'}`);
         } catch (e) {
           console.warn('Error handling followRequestReceived', e);
         }
-      };
-      socketService.on('followRequestReceived', offFollowRequest);
+      });
 
       // Listen for follow request acceptance
-      const offFollowAccepted = (payload) => {
+      const offFollowAccepted = socketOn('followRequestAccepted', (payload) => {
         try {
           console.log('Follow request accepted:', payload);
           
@@ -320,14 +332,13 @@ const Home = () => {
         } catch (e) {
           console.warn('Error handling followRequestAccepted', e);
         }
-      };
-      socketService.on('followRequestAccepted', offFollowAccepted);
+      });
 
       return () => {
         // Cleanup socket listeners
         try { 
-          socketService.off('followRequestReceived', offFollowRequest);
-          socketService.off('followRequestAccepted', offFollowAccepted);
+          if (offFollowRequest) offFollowRequest(); 
+          if (offFollowAccepted) offFollowAccepted(); 
         } catch (e) {}
       };
     } catch (e) {
@@ -604,63 +615,7 @@ const Home = () => {
           </aside>
         </nav>
 
-        {/* Chat Modal */}
-        {showChat && activeChat && (
-          <div className="fixed bottom-4 right-4 w-80 h-96 bg-white rounded-2xl shadow-2xl z-[1000] border border-gray-300">
-            <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-500 to-purple-500 rounded-t-2xl text-white flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <img
-                  src={getImageSrc(activeChat?.profilePhotoUrl || activeChat?.profilePhoto)}
-                  alt={activeChat.username}
-                  className="w-8 h-8 rounded-full object-cover"
-                />
-                <span className="font-semibold">{activeChat.username}</span>
-              </div>
-              <button onClick={() => setShowChat(false)} className="text-white hover:text-gray-200">
-                <i className="fa-solid fa-times"></i>
-              </button>
-            </div>
-            
-            <div ref={chatContainerRef} className="h-64 overflow-y-auto p-4 space-y-3">
-              {chatLoading ? (
-                <div className="text-center">Loading messages...</div>
-              ) : chatMessages.length === 0 ? (
-                <div className="text-center text-gray-500">No messages yet. Start a conversation!</div>
-              ) : (
-                chatMessages.map((message) => (
-                  <div key={message._id} className={`flex ${message.senderId === currentUser?._id ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-xs p-3 rounded-2xl ${message.senderId === currentUser?._id ? 'bg-blue-500 text-white rounded-br-none' : 'bg-gray-200 text-gray-800 rounded-bl-none'}`}>
-                      <p>{message.content}</p>
-                      <p className={`text-xs mt-1 ${message.senderId === currentUser?._id ? 'text-blue-100' : 'text-gray-500'}`}>
-                        {formatTime(message.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            
-            <div className="p-4 border-t border-gray-200">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                  placeholder="Type a message..."
-                  className="flex-1 border border-gray-300 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={!messageInput.trim()}
-                  className="bg-blue-500 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-blue-600 disabled:opacity-50"
-                >
-                  <i className="fa-solid fa-paper-plane"></i>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+       
 
         {/* Create Post Modal */}
         {showCreateModal && (
@@ -723,7 +678,7 @@ const Home = () => {
         )}
 
         {/* Chats Section */}
-        <section id='chats' className="rounded-[10px] w-[95%] h-[23vh] relative top-[90px] left-[35px] flex bg-white shadow-[rgba(100,100,111,0.2)_0px_7px_29px_0px]">
+        {/* <section id='chats' className="rounded-[10px] w-[95%] h-[23vh] relative top-[90px] left-[35px] flex bg-white shadow-[rgba(100,100,111,0.2)_0px_7px_29px_0px]">
           <aside id='group_mem' className="flex-[80%] pt-[4px] flex flex-col gap-[5px] overflow-y-auto">
             {friends.length === 0 ? (
               <div className="text-center p-4 text-gray-500">
@@ -764,7 +719,7 @@ const Home = () => {
               Archive
             </button>
           </aside>
-        </section>
+        </section> */}
 
         {/* Create Post Section */}
         <section id='cpost' className="rounded-[10px] bg-white relative top-[105px] w-[95%] left-[35px] h-[8vh] flex items-center pl-[10px] shadow-[rgba(100,100,111,0.2)_0px_7px_29px_0px]">

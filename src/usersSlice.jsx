@@ -1,6 +1,7 @@
 // usersSlice.js - Combine search and follow functionality
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { emitWithAck, connectSocket } from './socket';
+// import { emitWithAck, connectSocket } from './socket';
+import { connectSocket } from './socket';
 import axios from 'axios';
 
 const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
@@ -106,6 +107,62 @@ export const searchUsers = createAsyncThunk(
   }
 );
 
+// Send follow request by userId
+// export const sendFollowRequest = createAsyncThunk(
+//   'users/sendFollowRequest',
+//   async (userId, { rejectWithValue, getState }) => {
+//     try {
+//       const token = localStorage.getItem('authToken');
+      
+//       // Call the backend endpoint for follow requests
+//       console.log('[users.sendFollowRequest] REST POST payload=', { userId });
+//       const response = await axios.post(
+//         `${API_BASE_URL}/follow/send-request`,
+//         { userId },  // Backend expects userId
+//         {
+//           headers: {
+//             Authorization: `Bearer ${token}`,
+//             'Content-Type': 'application/json'
+//           },
+//           timeout: 8000
+//         }
+//       );
+//       console.log('[users.sendFollowRequest] REST response=', { status: response.status, data: response.data });
+      
+//       return { 
+//         success: true,
+//         targetUserId: userId,
+//         data: response.data 
+//       };
+//     } catch (error) {
+//       console.error('Follow request error:', error);
+      
+//       // If REST fails, try socket.io as fallback
+//       try {
+//         const token = localStorage.getItem('authToken');
+//         connectSocket(token);
+//         console.log('[users.sendFollowRequest] REST failed, attempting socket fallback emit follow:request', { targetUserId: userId });
+//         const socketResult = await emitWithAck('follow:request', { 
+//           targetUserId: userId 
+//         }, 10000);
+//         console.log('[users.sendFollowRequest] socket fallback result=', socketResult);
+//         return { 
+//           success: true,
+//           targetUserId: userId,
+//           data: socketResult,
+//           viaSocket: true
+//         };
+//       } catch (socketError) {
+//         console.log('[users.sendFollowRequest] socket fallback error=', socketError?.message || socketError);
+//         return rejectWithValue(
+//           error.response?.data?.message || 
+//           error.message || 
+//           'Failed to send follow request'
+//         );
+//       }
+//     }
+//   }
+// );
 
 // Send follow request by username (compatibility with existing code)
 export const sendFollowByUsername = createAsyncThunk(

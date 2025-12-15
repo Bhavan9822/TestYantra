@@ -3,8 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchArticleById, selectPostById, updatePostOptimistically } from '../ArticlesSlice';
 import { fetchComments, postComment, selectCommentsForArticle, selectCommentsMeta } from '../CommentSlice';
-import { optimisticToggleLike, selectArticleLikes, selectIsLiking, addLike, removeLike } from '../LikeSlice';
-import { addLikeNotification, addCommentNotification } from '../NotificationSlice'; // Import notification actions
+import { optimisticToggleLike, selectArticleLikes, selectIsLiking, toggleLike } from '../LikeSlice';
 import NotificationBell from './NotificationBell';
 import { formatTime } from '../FormatTime';
 
@@ -200,36 +199,18 @@ const IndArticle = () => {
         currentLikes 
       }));
 
-      if (currentlyLiked) {
-        const res = await dispatch(removeLike({ articleId, userId: currentUser._id }));
-        if (res.type && !res.type.endsWith('/fulfilled')) {
-          // revert
-          setLocalLikeState({ hasLiked: prev.hasLiked, count: prev.count, isUpdating: false });
-          // alert('Failed to unlike. Please try again.');
-        }
-      } else {
-        const res = await dispatch(addLike({ 
-          articleId, 
-          userId: currentUser._id,
-          articleOwnerId: articleOwnerId,
-          articleTitle: displayArticle.title || 'Your article',
-          currentUserName: currentUser.username || currentUser.name || 'Someone'
-        }));
-        
-        if (res.type && res.type.endsWith('/fulfilled')) {
-          // Create notification only if liking someone else's article
-          if (!isOwnArticle && res.payload?._shouldCreateNotification) {
-            dispatch(addLikeNotification({
-              actor: currentUser._id,
-              targetId: articleId,
-              actorName: currentUser.username || currentUser.name || 'Someone',
-              articleTitle: displayArticle.title || 'Your article'
-            }));
-          }
-        } else {
-          setLocalLikeState({ hasLiked: prev.hasLiked, count: prev.count, isUpdating: false });
-          // alert('Failed to like. Please try again.');
-        }
+      const res = await dispatch(toggleLike({ 
+        articleId, 
+        userId: currentUser._id,
+        wasLikedBefore: currentlyLiked,
+        articleOwnerId: articleOwnerId,
+        articleTitle: displayArticle.title || 'Your article',
+        currentUserName: currentUser.username || currentUser.name || 'Someone'
+      }));
+      
+      if (res.type && !res.type.endsWith('/fulfilled')) {
+        // revert
+        setLocalLikeState({ hasLiked: prev.hasLiked, count: prev.count, isUpdating: false });
       }
     } catch (error) {
       console.error('Error toggling like:', error);
@@ -345,17 +326,6 @@ const IndArticle = () => {
       }));
       
       if (result.type && result.type.endsWith('/fulfilled')) {
-        // Create notification only if commenting on someone else's article
-        if (!isOwnArticle && result.payload?._shouldCreateNotification) {
-          dispatch(addCommentNotification({
-            actor: currentUser._id,
-            targetId: articleId,
-            actorName: currentUser.username || currentUser.name || 'Someone',
-            articleTitle: displayArticle.title || 'Your article',
-            commentText: commentInput.trim()
-          }));
-        }
-        
         setCommentInput('');
         // Refresh comments first page to include newest
         dispatch(fetchComments({ articleId, page: 1, perPage: commentsMeta.perPage || 5 }));

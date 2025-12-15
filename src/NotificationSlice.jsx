@@ -1,183 +1,151 @@
-import { createSlice } from '@reduxjs/toolkit';
+
+// src/NotificationSlice.js
+import { createSlice } from "@reduxjs/toolkit";
+
+const initialState = {
+  notifications: [],
+  unreadCount: 0,
+};
+
+// 🔧 Helper: persist to localStorage
+const persist = (notifications) => {
+  try {
+    localStorage.setItem("notifications", JSON.stringify(notifications));
+  } catch (e) {
+    console.warn("Notification persistence failed:", e);
+  }
+};
 
 const notificationSlice = createSlice({
-  name: 'notifications',
-  initialState: {
-    items: [],
-    unreadCount: 0,
-  },
+  name: "notifications",
+  initialState,
   reducers: {
-    // Load notifications from localStorage on app start
+    // ================= ADD (SOCKET) =================
+    addNotification: (state, action) => {
+      const payload = action.payload;
+
+      const notification = {
+        id: payload.id || `${Date.now()}-${Math.random()}`,
+        type: payload.type,
+        fromUserId: payload.fromUserId,
+        fromUsername: payload.fromUsername,
+        profilePhoto: payload.profilePhoto || null,
+        message: payload.message,
+        createdAt: payload.createdAt || new Date().toISOString(),
+        isRead: payload.isRead ?? false,
+      };
+
+      state.notifications.unshift(notification);
+
+      if (!notification.isRead) {
+        state.unreadCount += 1;
+      }
+
+      persist(state.notifications);
+    },
+
+    // ================= FROM LOGIN (pendingRequests) =================
+    setNotificationsFromPending: (state, action) => {
+      const notifications = action.payload.map((req) => ({
+        id: req._id,
+        type: "FOLLOW_REQUEST",
+        fromUserId: req._id,
+        fromUsername: req.username,
+        profilePhoto: req.profilePhoto || null,
+        message: `${req.username} sent you a follow request`,
+        createdAt: new Date().toISOString(),
+        isRead: false,
+      }));
+
+      state.notifications = notifications;
+      state.unreadCount = notifications.length;
+
+      persist(state.notifications);
+    },
+
+    // ================= MARK ONE READ =================
+    markAsRead: (state, action) => {
+      const n = state.notifications.find(
+        (item) => item.id === action.payload
+      );
+
+      if (n && !n.isRead) {
+        n.isRead = true;
+        state.unreadCount = Math.max(0, state.unreadCount - 1);
+        persist(state.notifications);
+      }
+    },
+
+    // ================= MARK ALL READ =================
+    markAllAsRead: (state) => {
+      state.notifications.forEach((n) => {
+        n.isRead = true;
+      });
+
+      state.unreadCount = 0;
+      persist(state.notifications);
+    },
+
+    // ================= DELETE ONE =================
+    deleteNotification: (state, action) => {
+      const index = state.notifications.findIndex(
+        (n) => n.id === action.payload
+      );
+
+      if (index !== -1) {
+        const wasUnread = !state.notifications[index].isRead;
+        state.notifications.splice(index, 1);
+
+        if (wasUnread) {
+          state.unreadCount = Math.max(0, state.unreadCount - 1);
+        }
+
+        persist(state.notifications);
+      }
+    },
+
+    // ================= CLEAR ALL =================
+    clearNotifications: (state) => {
+      state.notifications = [];
+      state.unreadCount = 0;
+      persist([]);
+    },
+
+    // ================= LOAD FROM STORAGE =================
     loadNotificationsFromStorage: (state) => {
       try {
-        const savedNotifications = localStorage.getItem('notifications');
-        if (savedNotifications) {
-          const notifications = JSON.parse(savedNotifications);
-          state.items = notifications;
-          state.unreadCount = notifications.filter(n => !n.read).length;
-        }
-      } catch (e) {
-        console.warn('Failed to load notifications from localStorage:', e);
-      }
-    },
-    
-    // Add notification for like action
-    addLikeNotification: (state, action) => {
-      const { actor, targetId, actorName, articleTitle } = action.payload;
-      try { console.log('NotificationSlice: addLikeNotification called', action.payload); } catch (e) {}
-      const notification = {
-        id: Date.now().toString(),
-        type: 'like',
-        actor,
-        actorName: actorName || 'Someone',
-        targetId,
-        targetType: 'article',
-        message: `liked your post`,
-        articleTitle: articleTitle || 'Your post',
-        createdAt: new Date().toISOString(),
-        read: false
-      };
-      state.items.unshift(notification);
-      state.unreadCount += 1;
-      
-      // Persist to localStorage
-      try {
-        localStorage.setItem('notifications', JSON.stringify(state.items));
-      } catch (e) {
-        console.warn('Failed to save notifications to localStorage:', e);
-      }
-    },
-    
-    // Add notification for comment action
-    addCommentNotification: (state, action) => {
-      const { actor, targetId, actorName, articleTitle, commentText } = action.payload;
-      try { console.log('NotificationSlice: addCommentNotification called', action.payload); } catch (e) {}
-      const notification = {
-        id: Date.now().toString(),
-        type: 'comment',
-        actor,
-        actorName: actorName || 'Someone',
-        targetId,
-        targetType: 'article',
-        message: `commented on your post`,
-        articleTitle: articleTitle || 'Your post',
-        commentText: commentText?.substring(0, 100) || '', // First 100 chars
-        createdAt: new Date().toISOString(),
-        read: false
-      };
-      state.items.unshift(notification);
-      state.unreadCount += 1;
-      
-      // Persist to localStorage
-      try {
-        localStorage.setItem('notifications', JSON.stringify(state.items));
-      } catch (e) {
-        console.warn('Failed to save notifications to localStorage:', e);
-      }
-    },
+        const stored = localStorage.getItem("notifications");
+        if (!stored) return;
 
-    // Add notification for follow request received
-    addFollowRequestNotification: (state, action) => {
-      const { actor, requestId, message } = action.payload;
-      const notification = {
-        id: Date.now().toString(),
-        type: 'follow_request',
-        actor,
-        requestId: requestId || null,
-        message: message || `${actor?.username || actor?.name || 'Someone'} requested to follow you`,
-        createdAt: new Date().toISOString(),
-        read: false,
-      };
-      state.items.unshift(notification);
-      state.unreadCount += 1;
+        const notifications = JSON.parse(stored);
 
-      try { localStorage.setItem('notifications', JSON.stringify(state.items)); } catch (e) { console.warn('Failed to save notifications to localStorage:', e); }
-    },
-    
-    // Mark notification as read
-    markAsRead: (state, action) => {
-      const notificationId = action.payload;
-      const notification = state.items.find(n => n.id === notificationId);
-      if (notification && !notification.read) {
-        notification.read = true;
-        state.unreadCount = Math.max(0, state.unreadCount - 1);
-        
-        // Update localStorage
-        try {
-          localStorage.setItem('notifications', JSON.stringify(state.items));
-        } catch (e) {
-          console.warn('Failed to update localStorage:', e);
-        }
-      }
-    },
-    
-    // Mark all as read
-    markAllAsRead: (state) => {
-      state.items.forEach(notification => {
-        notification.read = true;
-      });
-      state.unreadCount = 0;
-      
-      // Update localStorage
-      try {
-        localStorage.setItem('notifications', JSON.stringify(state.items));
+        state.notifications = notifications;
+        state.unreadCount = notifications.filter(
+          (n) => !n.isRead
+        ).length;
       } catch (e) {
-        console.warn('Failed to update localStorage:', e);
+        console.warn("Failed to load notifications:", e);
       }
     },
-    
-    // Delete notification
-    deleteNotification: (state, action) => {
-      const notificationId = action.payload;
-      const notification = state.items.find(n => n.id === notificationId);
-      if (notification && !notification.read) {
-        state.unreadCount = Math.max(0, state.unreadCount - 1);
-      }
-      state.items = state.items.filter(n => n.id !== notificationId);
-      
-      // Update localStorage
-      try {
-        localStorage.setItem('notifications', JSON.stringify(state.items));
-      } catch (e) {
-        console.warn('Failed to update localStorage:', e);
-      }
-    },
-    
-    // Clear all notifications
-    clearNotifications: (state) => {
-      state.items = [];
-      state.unreadCount = 0;
-      
-      // Clear localStorage
-      try {
-        localStorage.removeItem('notifications');
-      } catch (e) {
-        console.warn('Failed to clear localStorage:', e);
-      }
-    },
-    
-    // Reset on logout
-    resetNotifications: (state) => {
-      state.items = [];
-      state.unreadCount = 0;
-    }
   },
 });
 
-export const { 
-  loadNotificationsFromStorage,
-  addLikeNotification,
-  addCommentNotification,
-  addFollowRequestNotification,
+// ================= EXPORTS =================
+export const {
+  addNotification,
+  setNotificationsFromPending,
   markAsRead,
   markAllAsRead,
   deleteNotification,
   clearNotifications,
-  resetNotifications
+  loadNotificationsFromStorage,
 } = notificationSlice.actions;
 
-export default notificationSlice.reducer;
+// ================= SELECTORS =================
+export const selectAllNotifications = (state) =>
+  state.notifications.notifications;
 
-// Selectors
-export const selectAllNotifications = (state) => state.notifications?.items || [];
-export const selectUnreadCount = (state) => state.notifications?.unreadCount || 0;
+export const selectUnreadCount = (state) =>
+  state.notifications.unreadCount;
+
+export default notificationSlice.reducer;
