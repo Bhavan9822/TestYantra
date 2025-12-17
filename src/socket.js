@@ -1,8 +1,9 @@
 
-// src/socket.js
+
 import { io } from "socket.io-client";
 import store from "./Store";
 import { addNotification } from "./NotificationSlice";
+import { incrementFollowers, incrementFollowing } from "./Slice"; // authSlice
 
 // ================= CONFIG =================
 const BACKEND_BASE = "https://robo-zv8u.onrender.com";
@@ -26,11 +27,10 @@ function registerUserIfNeeded() {
   if (!userId) return;
   if (registeredUserId === userId) return;
 
-  // backend expects "register"
   socket.emit("register", userId);
   registeredUserId = userId;
 
-  console.log("🔥 socket register emitted:", userId);
+  console.log("🔥 socket registered:", userId);
 }
 
 // ================= CONNECT SOCKET =================
@@ -77,8 +77,8 @@ function connectSocket() {
         addNotification({
           type: "FOLLOW_REQUEST",
           fromUserId: data.fromId,
-          fromUsername: data.from, // ✅ UI USES THIS
-          message: `🔔 Follow request from ${data.from}`,
+          fromUsername: data.from,
+          message: `${data.from} sent you a follow request`,
           createdAt: new Date().toISOString(),
           isRead: false,
         })
@@ -89,16 +89,31 @@ function connectSocket() {
     socket.on("followRequestAccepted", (data) => {
       console.log("✅ followRequestAccepted:", data);
 
+      const state = store.getState();
+      const myUserId = state?.auth?.currentUser?._id;
+
+      // 🔔 Notification
       store.dispatch(
         addNotification({
           type: "FOLLOW_ACCEPTED",
           fromUserId: data.byId,
           fromUsername: data.by,
-          message: `✅ ${data.by} accepted your follow request`,
+          message: `${data.by} accepted your follow request`,
           createdAt: new Date().toISOString(),
           isRead: false,
         })
       );
+
+      // 🔥 REAL-TIME PROFILE COUNT UPDATE
+      if (!myUserId) return;
+
+      if (data.byId === myUserId) {
+        // 🟢 I ACCEPTED someone → followers++
+        store.dispatch(incrementFollowers());
+      } else {
+        // 🟢 My request was accepted → following++
+        store.dispatch(incrementFollowing());
+      }
     });
 
     // ================= FOLLOW REQUEST REJECTED =================
@@ -110,17 +125,15 @@ function connectSocket() {
           type: "FOLLOW_REJECTED",
           fromUserId: data.byId,
           fromUsername: data.by,
-          message: `❌ ${data.by} rejected your follow request`,
+          message: `${data.by} rejected your follow request`,
           createdAt: new Date().toISOString(),
           isRead: false,
         })
       );
     });
 
-    // 🔁 Watch login after socket already connected
-    store.subscribe(() => {
-      registerUserIfNeeded();
-    });
+    // 🔁 Handle login after socket already connected
+    store.subscribe(registerUserIfNeeded);
 
     return socket;
   } catch (e) {
@@ -131,14 +144,10 @@ function connectSocket() {
 
 // ================= DISCONNECT =================
 function disconnectSocket() {
-  try {
-    if (socket) {
-      socket.disconnect();
-      socket = null;
-      registeredUserId = null;
-    }
-  } catch (e) {
-    console.warn("❌ socket disconnect error:", e);
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+    registeredUserId = null;
   }
 }
 
@@ -150,14 +159,11 @@ function on(event, cb) {
 }
 
 function off(event, cb) {
-  if (!socket) return;
-  socket.off(event, cb);
+  socket?.off(event, cb);
 }
 
 function emit(event, payload) {
-  if (!socket) return false;
-  socket.emit(event, payload);
-  return true;
+  socket?.emit(event, payload);
 }
 
 // ================= EXPORTS =================

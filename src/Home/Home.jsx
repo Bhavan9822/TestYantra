@@ -12,6 +12,8 @@ import {
   followRequestReceived,
   fetchAllUsers
 } from '../usersSlice';
+import  { incrementFollowing }  from '../Slice';
+import { incrementFollowers }  from '../Slice';
 import NotificationBell from '../component/NotificationBell';
 import { connectSocket, on as socketOn } from '../socket';
 import { createPost, fetchPosts } from '../ArticlesSlice';
@@ -228,32 +230,53 @@ const Home = () => {
       status: 'requested' 
     }));
 
-    try {
-      // Send follow request via userId
-      const result = await dispatch(sendFollowRequest(user._id)).unwrap();
+    // try {
+    //   // Send follow request via userId
+    //   // const result = await dispatch(sendFollowRequest(user._id)).unwrap();
+    //   await dispatch(sendFollowRequest({ 
+    //   targetUsername: user.username 
+    // })).unwrap();
       
-      if (result && result.success) {
-        toast.success('Follow request sent successfully!');
+    //   if (result && result.success) {
+    //     toast.success('Follow request sent successfully!');
         
-        // Emit socket event for real-time notification
-        try {
-          const token = localStorage.getItem('authToken');
-          connectSocket(token);
-        } catch (socketErr) {
-          console.warn('Socket notification failed:', socketErr);
-        }
+    //     // Emit socket event for real-time notification
+    //     try {
+    //       const token = localStorage.getItem('authToken');
+    //       connectSocket(token);
+    //     } catch (socketErr) {
+    //       console.warn('Socket notification failed:', socketErr);
+    //     }
+    //   }
+    // } catch (error) {
+    //   console.error('Follow request failed:', error);
+      
+    //   // Revert optimistic update on failure
+    //   dispatch(updateUserFollowStatus({ 
+    //     userId: user._id, 
+    //     status: 'none' 
+    //   }));
+      
+    //   toast.error(error || 'Failed to send follow request');
+    // }
+
+    try {
+        await dispatch(
+          sendFollowRequest({ targetUsername: user.username })
+        ).unwrap();
+
+        toast.success('Follow request sent successfully!');
+      } catch (error) {
+        console.error('Follow request failed:', error);
+
+        dispatch(updateUserFollowStatus({ 
+          userId: user._id, 
+          status: 'none' 
+        }));
+
+        toast.error(error || 'Failed to send follow request');
       }
-    } catch (error) {
-      console.error('Follow request failed:', error);
-      
-      // Revert optimistic update on failure
-      dispatch(updateUserFollowStatus({ 
-        userId: user._id, 
-        status: 'none' 
-      }));
-      
-      toast.error(error || 'Failed to send follow request');
-    }
+
   }, [dispatch, currentUser]);
 
   // Handle follow by username (when user presses Enter on search)
@@ -326,6 +349,16 @@ const Home = () => {
               userId: payload.userId,
               status: 'following'
             }));
+          }
+          
+          // 🔥 UPDATE FOLLOWER/FOLLOWING COUNTS
+          // If current user is the requester (User A), increment their following count
+          if (payload.requesterId === currentUser?._id) {
+            dispatch(incrementFollowing());
+          }
+          // If current user is the recipient (User B), increment their followers count
+          if (payload.targetUserId === currentUser?._id) {
+            dispatch(incrementFollowers());
           }
           
           toast.success('Follow request accepted!');
@@ -677,50 +710,6 @@ const Home = () => {
           </div>
         )}
 
-        {/* Chats Section */}
-        {/* <section id='chats' className="rounded-[10px] w-[95%] h-[23vh] relative top-[90px] left-[35px] flex bg-white shadow-[rgba(100,100,111,0.2)_0px_7px_29px_0px]">
-          <aside id='group_mem' className="flex-[80%] pt-[4px] flex flex-col gap-[5px] overflow-y-auto">
-            {friends.length === 0 ? (
-              <div className="text-center p-4 text-gray-500">
-                <i className="fa-regular fa-users text-2xl mb-2 opacity-50"></i>
-                <p>No friends yet. Search for users to add friends!</p>
-              </div>
-            ) : (
-              friends.map((friend) => (
-                <div 
-                  key={friend._id} 
-                  className='mem border border-gray-300 h-[50px] w-[270px] rounded-[10px] relative top-[5px] left-[20px] pl-[8px] pt-[3px] flex cursor-pointer hover:bg-gray-50 transition-colors'
-                  onClick={() => handleOpenChat(friend)}
-                >
-                  <aside id='profile_img' className="h-[40px] w-[40px] rounded-full flex-[16%]">
-                    <img 
-                      src={getImageSrc(friend.profilePhotoUrl || friend.profilePhoto)} 
-                      alt={friend.username} 
-                      className="border border-gray-400 rounded-full h-[40px] w-[40px] object-cover" 
-                    />
-                  </aside>
-                  <aside id='name_msg' className="flex-[54%] h-[40px] flex flex-col pl-[5px]">
-                    <h2 className="text-[15px] font-medium">{friend.username}</h2>
-                    <p className="text-[12px] text-gray-500">Click to chat</p>
-                  </aside>
-                  <aside id='time' className="flex-[30%] h-[40px] flex justify-center items-center font-['Courier_New',Courier,monospace]">
-                    <p className="text-green-500 text-sm">Online</p>
-                  </aside>
-                </div>
-              ))
-            )}
-          </aside>
-          <aside id='archive_aside' className="flex-[20%] flex items-center pt-[80px] pl-[120px]">
-            <button 
-              id='arch_btn' 
-              className="rounded-[10px] px-[30px] py-[8px] font-semibold text-[18px] text-white bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 cursor-pointer hover:opacity-90 transition-opacity"
-              onClick={()=>navigate("/chat")}
-            >
-              Archive
-            </button>
-          </aside>
-        </section> */}
-
         {/* Create Post Section */}
         <section id='cpost' className="rounded-[10px] bg-white relative top-[105px] w-[95%] left-[35px] h-[8vh] flex items-center pl-[10px] shadow-[rgba(100,100,111,0.2)_0px_7px_29px_0px]">
           <img 
@@ -760,11 +749,11 @@ const Home = () => {
                   <p className="text-sm text-gray-600">Posts</p>
                 </aside>
                 <aside className="flex justify-center items-center flex-col">
-                  <h2 className="text-[20px] font-bold text-purple-600">{friends.length}</h2>
+                  <h2 className="text-[20px] font-bold text-purple-600">{currentUser?.followers?.length || 0}</h2>
                   <p className="text-sm text-gray-600">Followers</p>
                 </aside>
                 <aside className="flex justify-center items-center flex-col">
-                  <h2 className="text-[20px] font-bold text-pink-600">{friends.length}</h2>
+                  <h2 className="text-[20px] font-bold text-pink-600">{currentUser?.following?.length || 0}</h2>
                   <p className="text-sm text-gray-600">Following</p>
                 </aside>
               </div>
@@ -979,3 +968,7 @@ const Home = () => {
 };
 
 export default Home;
+
+
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!
+

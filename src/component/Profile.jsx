@@ -7,14 +7,17 @@ const Profile = () => {
   const { currentUser } = useSelector((state) => state.auth || {});
   const [isDark, setIsDark] = useState(false);
 
+  const followersCount = currentUser?.followers?.length || 0;
+  const followingCount = currentUser?.following?.length || 0;
+
   const navigate = useNavigate();
   const unreadCount = useSelector(selectUnreadCount) || 0;
 
   // Get data from Redux store
   const { posts = [], loading = false, error = null, createPostLoading = false } = useSelector((state) => state.articles || {});
-  const {  
-      friends = [], 
-    } = useSelector((state) => state.search || {});
+  // const {  
+  //     friends = [], 
+  //   } = useSelector((state) => state.search || {});
 
 
   const defaultAvatar = 'https://www.svgrepo.com/show/446529/avatar.svg';
@@ -67,7 +70,7 @@ const Profile = () => {
 
   const userName = useMemo(() => currentUser?.username || "User", [currentUser]);
 
-  const { displayName, email, photoURL, bio = 'No bio yet', interests = [], followers = 5700, following = 900 } = currentUser;
+  const { displayName, email, photoURL, bio = 'No bio yet', interests = [] } = currentUser;
 
   // Prefer server-provided articles/posts on the user object. Normalize shapes.
   const userArticlesRaw = currentUser.articles || currentUser.posts || [];
@@ -165,11 +168,11 @@ const Profile = () => {
             <p className="text-xs text-gray-600 dark:text-gray-200">Posts</p>
           </div>
           <div className="bg-white dark:bg-purple-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center">
-            <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{friends.length}</h3>
+            <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{followersCount}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Followers</p>
           </div>
           <div className="bg-white dark:bg-pink-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center">
-            <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{friends.length}</h3>
+            <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{followingCount}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Following</p>
           </div>
         </div>
