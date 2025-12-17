@@ -1,41 +1,111 @@
-// // store.js
-// import { configureStore } from '@reduxjs/toolkit';
-// import authReducer from './Slice';
-// import articlesReducer from './ArticlesSlice'; // Make sure this name matches
-// import searchReducer from './SearchSlice';
-// import likeReducer from './LikeSlice';
-// import commentReducer from './CommentSlice';
-// import notificationReducer from './NotificationSlice';
-// import followReducer from './FollowSendSlice';
-// import usersReducer from './usersSlice';
+
+// import { configureStore } from "@reduxjs/toolkit";
+
+// // 🔹 Reducers
+// import authReducer from "./Slice"; // authSlice
+// import articlesReducer from "./ArticlesSlice";
+// import searchReducer from "./SearchSlice";
+// import likeReducer from "./LikeSlice";
+// import commentReducer from "./CommentSlice";
+// import notificationReducer from "./NotificationSlice";
+// import followReducer from "./FollowSendSlice";
+// import usersReducer from "./usersSlice";
+
+// /**
+//  * Middleware to allow dispatching actions
+//  * from inside reducers (used for login → notifications sync)
+//  */
+// const asyncDispatchMiddleware = (store) => (next) => (action) => {
+//   let syncFinished = false;
+//   let actionQueue = [];
+
+//   function asyncDispatch(asyncAction) {
+//     actionQueue.push(asyncAction);
+//     if (syncFinished) {
+//       actionQueue.forEach((a) => store.dispatch(a));
+//       actionQueue = [];
+//     }
+//   }
+
+//   const actionWithAsyncDispatch = {
+//     ...action,
+//     asyncDispatch,
+//   };
+
+//   next(actionWithAsyncDispatch);
+//   syncFinished = true;
+
+//   actionQueue.forEach((a) => store.dispatch(a));
+//   actionQueue = [];
+// };
 
 // const store = configureStore({
 //   reducer: {
-//     comments: commentReducer,
+//     auth: authReducer,
+//     articles: articlesReducer,
+//     search: searchReducer,
 //     likes: likeReducer,
+//     comments: commentReducer,
 //     notifications: notificationReducer,
 //     follow: followReducer,
 //     users: usersReducer,
-//     auth: authReducer,
-//     articles: articlesReducer, // This should be 'articles' not 'posts'
-//     search: searchReducer,
 //   },
+
+//   middleware: (getDefaultMiddleware) =>
+//     getDefaultMiddleware({
+//       serializableCheck: {
+//         ignoredActions: ["socket/connect"],
+//         ignoredActionPaths: ["meta.arg", "payload.timestamp"],
+//         ignoredPaths: ["socket"],
+//       },
+//     }).concat(asyncDispatchMiddleware),
 // });
+
 // export default store;
 
-// !!!!!!!!!!!!!!!!!
+// !!!!!!!!!!!!!!!!!!!!!!!!!!
+// src/Store.jsx
+import { configureStore } from "@reduxjs/toolkit";
 
-// store.js
-import { configureStore } from '@reduxjs/toolkit';
-import authReducer from './Slice'; // This should be './features/auth/authSlice' or similar
-import articlesReducer from './ArticlesSlice';
-import searchReducer from './SearchSlice';
-import likeReducer from './LikeSlice';
-import commentReducer from './CommentSlice';
-import notificationReducer from './NotificationSlice';
-import followReducer from './FollowSendSlice';
-import usersReducer from './usersSlice'; // NEW: Your users slice
+// ================= REDUCERS =================
+import authReducer from "./Slice"; // authSlice
+import articlesReducer from "./ArticlesSlice";
+import searchReducer from "./SearchSlice";
+import likeReducer from "./LikeSlice";
+import commentReducer from "./CommentSlice";
+import notificationReducer from "./NotificationSlice";
+import followSendReducer from "./FollowSendSlice";
+import followAcceptReducer from "./FollowAcceptSlice";
+import followRejectReducer from "./FollowRejectSlice";
+import usersReducer from "./usersSlice";
 
+// ================= ASYNC DISPATCH MIDDLEWARE =================
+// Allows dispatching actions AFTER reducers finish (used for socket + login sync)
+const asyncDispatchMiddleware = (store) => (next) => (action) => {
+  let syncFinished = false;
+  let actionQueue = [];
+
+  const asyncDispatch = (asyncAction) => {
+    actionQueue.push(asyncAction);
+    if (syncFinished) {
+      actionQueue.forEach(store.dispatch);
+      actionQueue = [];
+    }
+  };
+
+  const actionWithAsyncDispatch = {
+    ...action,
+    asyncDispatch,
+  };
+
+  next(actionWithAsyncDispatch);
+  syncFinished = true;
+
+  actionQueue.forEach(store.dispatch);
+  actionQueue = [];
+};
+
+// ================= STORE =================
 const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -43,23 +113,34 @@ const store = configureStore({
     search: searchReducer,
     likes: likeReducer,
     comments: commentReducer,
+
+    // 🔔 Notifications (socket + localStorage)
     notifications: notificationReducer,
-    follow: followReducer,
-    users: usersReducer, // This is important for the new users slice
+
+    // 👥 Follow flows
+    followSend: followSendReducer,
+    followAccept: followAcceptReducer,
+    followReject: followRejectReducer,
+
+    users: usersReducer,
   },
-  
-  // Optional middleware configuration
+
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
-        // Ignore these action types
-        ignoredActions: ['socket/connect'],
-        // Ignore these field paths in all actions
-        ignoredActionPaths: ['meta.arg', 'payload.timestamp'],
-        // Ignore these paths in the state
-        ignoredPaths: ['socket'],
+        ignoredActions: [
+          "socket/connect",
+          "socket/disconnect",
+        ],
+        ignoredActionPaths: [
+          "meta.arg",
+          "payload.timestamp",
+        ],
+        ignoredPaths: [
+          "socket",
+        ],
       },
-    }),
+    }).concat(asyncDispatchMiddleware),
 });
 
 export default store;

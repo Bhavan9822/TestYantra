@@ -3,8 +3,7 @@ import React, { useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { fetchPosts, fetchPostById } from '../ArticlesSlice'
-import { selectArticleLikes, optimisticToggleLike, addLike, removeLike } from '../LikeSlice'
-import { addLikeNotification } from '../NotificationSlice' // Import notification action
+import { selectArticleLikes, optimisticToggleLike, toggleLike } from '../LikeSlice'
 import { useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { formatTime } from '../FormatTime'
@@ -299,31 +298,14 @@ const Articles = () => {
     dispatch(optimisticToggleLike({ articleId: postId, userId: currentUser._id, currentLikes }));
 
     try {
-      if (currentlyLiked) {
-        const res = await dispatch(removeLike({ 
-          articleId: postId, 
-          userId: currentUser._id 
-        }));
-        // No notification for unliking
-      } else {
-        const res = await dispatch(addLike({ 
-          articleId: postId, 
-          userId: currentUser._id,
-          articleOwnerId: articleOwnerId,
-          articleTitle: post.title || 'Your article',
-          currentUserName: currentUser.username || currentUser.name || 'Someone'
-        }));
-        
-        // Create notification only if liking someone else's article
-        if (!isOwnArticle && res.payload?._shouldCreateNotification) {
-          dispatch(addLikeNotification({
-            actor: currentUser._id,
-            targetId: postId,
-            actorName: currentUser.username || currentUser.name || 'Someone',
-            articleTitle: post.title || 'Your article'
-          }));
-        }
-      }
+      await dispatch(toggleLike({ 
+        articleId: postId, 
+        userId: currentUser._id,
+        wasLikedBefore: currentlyLiked,
+        articleOwnerId: articleOwnerId,
+        articleTitle: post.title || 'Your article',
+        currentUserName: currentUser.username || currentUser.name || 'Someone'
+      }));
     } catch (err) {
       console.error('Articles: like/unlike error', err);
     }

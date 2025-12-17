@@ -1,7 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { updatePostOptimistically } from './ArticlesSlice';
-import { addCommentNotification } from './NotificationSlice';
 
 const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
@@ -64,30 +63,10 @@ export const postComment = createAsyncThunk(
         console.warn('Failed to update article optimistically:', e);
       }
 
-      // Prepare notification metadata
-      const shouldNotify = articleOwnerId && getState().auth?.currentUser?._id !== articleOwnerId;
-      const notificationData = {
-        actor: getState().auth?.currentUser?._id,
-        targetId: articleId,
-        actorName: currentUserName || 'Someone',
-        articleTitle: articleTitle || 'Your article',
-        articleOwnerId: articleOwnerId,
-        commentText: content
-      };
-
-      // Dispatch notification (best-effort)
-      try {
-        if (shouldNotify) dispatch(addCommentNotification(notificationData));
-      } catch (e) {
-        console.warn('CommentSlice: failed to dispatch addCommentNotification', e);
-      }
-
       // Return data that components can use if needed
       return {
         articleId, 
-        comment: created,
-        _shouldCreateNotification: shouldNotify,
-        _notificationData: notificationData
+        comment: created
       };
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message || 'Failed to post comment');
