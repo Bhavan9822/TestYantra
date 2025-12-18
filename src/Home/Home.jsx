@@ -56,9 +56,44 @@ const Home = () => {
   const handelFollow=(e)=>{
     setinp(e.target.value);
   }
-  const handelfollowsubmit=(e)=>{
+  const handelfollowsubmit = async (e) => {
     e.preventDefault();
-    dispatch(sendFollowRequest({"targetUsername": inp }));
+    const username = inp.trim();
+    
+    if (!username) {
+      toast.error('Please enter a username');
+      return;
+    }
+
+    try {
+      const result = await dispatch(sendFollowRequest({ targetUsername: username })).unwrap();
+      
+      if (result.success || result.message === 'Follow request sent successfully') {
+        toast.success(`Follow request sent to ${username}`);
+      } else if (result.message?.includes('already following') || result.error?.includes('already following')) {
+        toast.info(`You are already following ${username}`);
+      } else if (result.message?.includes('pending') || result.error?.includes('pending')) {
+        toast.info(`Follow request already sent to ${username}`);
+      } else {
+        toast.success('Follow request sent successfully');
+      }
+    } catch (error) {
+      console.error('Follow request failed:', error);
+      
+      if (error?.includes?.('not found') || error?.includes?.('does not exist')) {
+        toast.error(`User "${username}" not found`);
+      } else if (error?.includes?.('already following')) {
+        toast.info(`You are already following ${username}`);
+      } else if (error?.includes?.('pending')) {
+        toast.info(`Follow request already pending for ${username}`);
+      } else if (error?.includes?.('yourself')) {
+        toast.error("You can't follow yourself");
+      } else {
+        toast.error(error || 'Failed to send follow request');
+      }
+    } finally {
+      setinp('');
+    }
   }
   const getImageSrc = useCallback((photo) => {
     // ... (keep your existing getImageSrc function)
@@ -699,12 +734,13 @@ const Home = () => {
           </aside>
           
           <aside id='as2' className="flex-[30%] flex justify-center items-center relative" ref={searchRef}>
-            <form action="" onSubmit={handelfollowsubmit} className='flex items-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-full border-2 border-gray-300 hover:border-blue-400 transition-colors'>
+            <form action="" onSubmit={handelfollowsubmit} className='flex items-center gap-10 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-full border-2 border-gray-300 hover:border-blue-400 transition-colors'>
               <input 
                 type="text" 
+                value={inp}
                 onChange={handelFollow} 
                 placeholder='Search users...' 
-                className='bg-transparent px-4 py-2 text-gray-700 placeholder-gray-400 focus:outline-none flex-1 min-w-0'
+                className='bg-transparent px-17 pl-7 py-0 text-gray-700 placeholder-gray-400 focus:outline-none flex-1 min-w-0'
               />
               <button 
                 type='submit'

@@ -1,5 +1,5 @@
 // Articles.jsx
-import React, { useEffect, useCallback, useMemo } from 'react'
+import React, { useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { fetchPosts, fetchPostById } from '../ArticlesSlice'
@@ -8,12 +8,59 @@ import { useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { formatTime } from '../FormatTime'
 import NotificationBell from './NotificationBell'
+import { sendFollowRequest } from '../SearchSlice';
+import { toast } from 'react-toastify';
 
 const Articles = () => {
   let navigate = useNavigate();
   const dispatch = useDispatch();
   const { currentUser } = useSelector((state) => state.auth);
   const defaultImage = "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face";
+
+  const [inp,setinp]=useState("")
+  const searchRef = useRef(null);
+  const handelFollow=(e)=>{
+      setinp(e.target.value);
+   }
+  const handelfollowsubmit = async (e) => {
+      e.preventDefault();
+      const username = inp.trim();
+      
+      if (!username) {
+        toast.error('Please enter a username');
+        return;
+      }
+
+      try {
+        const result = await dispatch(sendFollowRequest({ targetUsername: username })).unwrap();
+        
+        if (result.success || result.message === 'Follow request sent successfully') {
+          toast.success(`Follow request sent to ${username}`);
+        } else if (result.message?.includes('already following') || result.error?.includes('already following')) {
+          toast.info(`You are already following ${username}`);
+        } else if (result.message?.includes('pending') || result.error?.includes('pending')) {
+          toast.info(`Follow request already sent to ${username}`);
+        } else {
+          toast.success('Follow request sent successfully');
+        }
+      } catch (error) {
+        console.error('Follow request failed:', error);
+        
+        if (error?.includes?.('not found') || error?.includes?.('does not exist')) {
+          toast.error(`User "${username}" not found`);
+        } else if (error?.includes?.('already following')) {
+          toast.info(`You are already following ${username}`);
+        } else if (error?.includes?.('pending')) {
+          toast.info(`Follow request already pending for ${username}`);
+        } else if (error?.includes?.('yourself')) {
+          toast.error("You can't follow yourself");
+        } else {
+          toast.error(error || 'Failed to send follow request');
+        }
+      } finally {
+        setinp('');
+      }
+    }
 
   // Enhanced image helper function (declare before use to avoid TDZ)
   const getImageSrc = useCallback((photo) => {
@@ -339,13 +386,25 @@ const Articles = () => {
         <aside id='as1' className="flex-[30%]">
           <h1 className="font-bold text-[35px] ml-[30px] mt-[12px] bg-gradient-to-r from-[rgb(0,98,255)] via-[rgb(128,0,119)] to-pink bg-clip-text text-transparent">SocialMedia</h1>
         </aside>
-        <aside id='as2' className="flex-[30%] flex justify-center items-center">
-          <div id='searchbar'>
-            <input type="text" placeholder='Search...' className="border-2 border-black h-[40px] w-[30vw] rounded-[10px] pl-[15px] text-black" />
-          </div>
-          <i className="fa-solid fa-magnifying-glass relative top-[10px] right-[30px] h-[35px] w-[45px] rounded-tr-[10px] rounded-br-[10px] grid place-items-center text-black "></i>
-        </aside>
-        <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
+        <aside id='as2' className="flex-[30%] flex justify-center items-center relative" ref={searchRef}>
+            <form action="" onSubmit={handelfollowsubmit} className='flex items-center gap-10 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-full border-2 border-gray-300 hover:border-blue-400 transition-colors'>
+              <input 
+                type="text" 
+                value={inp}
+                onChange={handelFollow} 
+                placeholder='Search users...' 
+                className='bg-transparent px-17 pl-7 py-0 text-gray-700 placeholder-gray-400 focus:outline-none flex-1 min-w-0'
+              />
+              <button 
+                type='submit'
+                className='px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium rounded-full hover:from-blue-600 hover:to-purple-600 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-2 whitespace-nowrap'
+              >
+                <i className="fa-solid fa-magnifying-glass text-sm"></i>
+                Send
+              </button>
+            </form>
+         </aside>
+         <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
             <div className="flex gap-[35px] pr-[45px] nav_div">
             <div className='nav_icons'><i className="fa-regular fa-house text-[25px] text-black" onClick={()=>navigate("/home")}></i></div>
             <div className='nav_icons'><i className="fa-regular fa-square-plus text-[25px] text-black" onClick={()=>navigate('/articles')}></i></div>
@@ -362,8 +421,8 @@ const Articles = () => {
             <div id='theme' className="border-2 border-black flex justify-center items-center h-[25px] w-[25px] rounded-full">
               <i className="fa-regular fa-moon text-[16px] text-black"></i>
             </div>
-          </div>
-        </aside>
+           </div>
+         </aside>
       </nav>
 
       {/* Main Content */}

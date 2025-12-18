@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchArticleById, selectPostById, updatePostOptimistically } from '../ArticlesSlice';
-import { fetchComments, postComment, selectCommentsForArticle, selectCommentsMeta } from '../CommentSlice';
+import { postComment, selectCommentsForArticle, selectCommentsMeta } from '../CommentSlice';
 import { optimisticToggleLike, selectArticleLikes, selectIsLiking, toggleLike } from '../LikeSlice';
 import NotificationBell from './NotificationBell';
 import { formatTime } from '../FormatTime';
@@ -247,9 +247,10 @@ const IndArticle = () => {
     return getImageSrc(photo);
   }, [author, defaultImage, getImageSrc]);
 
+  const userName = useMemo(() => currentUser?.username || "User", [currentUser]);
   const userDisplayName = useMemo(() => {
     if (!author) return 'Anonymous';
-    return author.username || author.name || author.fullName || author.displayName || author.email || 'Anonymous';
+    return `${userName}` || author.name || author.fullName || author.displayName || author.email || 'Anonymous';
   }, [author]);
 
   // Derive current user's photo for nav/profile icon using multiple possible fields
@@ -292,16 +293,17 @@ const IndArticle = () => {
   const commentsMeta = useSelector((state) => selectCommentsMeta(state, articleId));
 
   // Load first page of comments when comments panel is opened or article changes
+  // Note: Removed fetchComments as there's no backend GET endpoint
+  // Comments will be loaded from the article data itself
   useEffect(() => {
     if (!articleId) return;
-    if (showComments) {
-      dispatch(fetchComments({ articleId, page: 1, perPage: 5 }));
-    }
+    // Comments are now fetched as part of the article data
   }, [articleId, showComments, dispatch]);
 
   const handleReadMore = useCallback(() => {
-    const nextPage = (commentsMeta.page || 0) + 1;
-    dispatch(fetchComments({ articleId, page: nextPage, perPage: commentsMeta.perPage || 5 }));
+    // Note: Removed pagination as there's no backend GET endpoint for comments
+    // All comments are now loaded with the article data
+    console.log('Load more comments - currently not supported without GET endpoint');
   }, [articleId, commentsMeta, dispatch]);
 
   // Handle comment submission with notifications
@@ -327,9 +329,7 @@ const IndArticle = () => {
       
       if (result.type && result.type.endsWith('/fulfilled')) {
         setCommentInput('');
-        // Refresh comments first page to include newest
-        dispatch(fetchComments({ articleId, page: 1, perPage: commentsMeta.perPage || 5 }));
-        // Also refresh article data
+        // Refresh article data to get updated comments
         dispatch(fetchArticleById(articleId));
       } else {
         alert('Failed to post comment. Please try again.');
@@ -547,7 +547,7 @@ const IndArticle = () => {
           </div>
         </article>
 
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-12">
+        {/* <div className="bg-white rounded-xl shadow-lg p-6 mb-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-800">
               Comments ({commentsMeta?.total || displayArticle?.comments?.length || 0})
@@ -663,7 +663,7 @@ const IndArticle = () => {
               )}
             </>
           )}
-        </div>
+        </div> */}
 
       </div>
     </main>

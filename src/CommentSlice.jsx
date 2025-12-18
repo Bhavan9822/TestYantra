@@ -4,29 +4,6 @@ import { updatePostOptimistically } from './ArticlesSlice';
 
 const API_BASE_URL = 'https://robo-zv8u.onrender.com/api';
 
-// Fetch paginated comments for an article (page starting at 1)
-export const fetchComments = createAsyncThunk(
-  'comments/fetchComments',
-  async ({ articleId, page = 1, perPage = 5 }, { rejectWithValue }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      const resp = await axios.get(`${API_BASE_URL}/articles/${articleId}/comments`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        params: { page, limit: perPage }
-      });
-
-      // Normalize response: try several shapes
-      const data = resp.data;
-      const comments = Array.isArray(data) ? data : (data.comments || data.results || []);
-      const total = data.total || data.count || comments.length;
-
-      return { articleId, page, perPage, comments, total };
-    } catch (err) {
-      return rejectWithValue(err.response?.data || err.message || 'Failed to fetch comments');
-    }
-  }
-);
-
 // Post a comment to an article
 export const postComment = createAsyncThunk(
   'comments/postComment',
@@ -108,60 +85,6 @@ const commentsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchComments.pending, (state, action) => {
-        const { articleId } = action.meta.arg;
-        state.byArticle[articleId] = state.byArticle[articleId] || { 
-          items: [], 
-          page: 0, 
-          perPage: 5, 
-          total: 0, 
-          loading: false, 
-          error: null 
-        };
-        state.byArticle[articleId].loading = true;
-        state.byArticle[articleId].error = null;
-      })
-      .addCase(fetchComments.fulfilled, (state, action) => {
-        const { articleId, page, perPage, comments, total } = action.payload;
-        state.byArticle[articleId] = state.byArticle[articleId] || { 
-          items: [], 
-          page: 0, 
-          perPage: 5, 
-          total: 0, 
-          loading: false, 
-          error: null 
-        };
-
-        // If page == 1 replace, else append
-        if (page === 1) {
-          state.byArticle[articleId].items = comments;
-        } else {
-          // Filter out duplicates before appending
-          const existingIds = new Set(state.byArticle[articleId].items.map(c => c._id || c.id));
-          const newComments = comments.filter(c => !existingIds.has(c._id || c.id));
-          state.byArticle[articleId].items = [...state.byArticle[articleId].items, ...newComments];
-        }
-
-        state.byArticle[articleId].page = page;
-        state.byArticle[articleId].perPage = perPage;
-        state.byArticle[articleId].total = total || state.byArticle[articleId].items.length;
-        state.byArticle[articleId].loading = false;
-        state.byArticle[articleId].error = null;
-      })
-      .addCase(fetchComments.rejected, (state, action) => {
-        const { articleId } = action.meta.arg;
-        state.byArticle[articleId] = state.byArticle[articleId] || { 
-          items: [], 
-          page: 0, 
-          perPage: 5, 
-          total: 0, 
-          loading: false, 
-          error: null 
-        };
-        state.byArticle[articleId].loading = false;
-        state.byArticle[articleId].error = action.payload;
-      })
-
       .addCase(postComment.pending, (state, action) => {
         const { articleId } = action.meta.arg;
         state.byArticle[articleId] = state.byArticle[articleId] || { 
