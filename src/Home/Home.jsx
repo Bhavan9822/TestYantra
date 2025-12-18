@@ -1,3 +1,4 @@
+
 // Home.jsx - UPDATED VERSION
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -106,6 +107,19 @@ const Home = () => {
   const userProfilePhoto = userPhoto;
   const userName = useMemo(() => currentUser?.username || "User", [currentUser]);
   const userEmail = useMemo(() => currentUser?.email || "user@example.com", [currentUser]);
+
+  // Count only the logged-in user's posts (not friends' posts)
+  const myPostsCount = useMemo(() => {
+    if (!currentUser?._id || !Array.isArray(posts)) return 0;
+    return posts.filter((post) => {
+      const authorId =
+        post.author?._id ||
+        post.user?._id ||
+        post.postedBy?._id ||
+        post.userId;
+      return authorId === currentUser._id;
+    }).length;
+  }, [posts, currentUser]);
 
   // State for UI
   const [likeOverrides, setLikeOverrides] = useState({});
@@ -502,7 +516,7 @@ const Home = () => {
     return posts.map((post) => {
       const postId = post._id || post.id || post.postId || null;
       const userObj = post.user || post.author || post.postedBy || {};
-      const userDisplayName = userObj.username || userObj.name || `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim() || 'Community Member';
+      const userDisplayName = `${userName}` || userObj.name || `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim() || 'Community Member';
       const userProfilePhoto = getImageSrc(
         userObj.userProfilePhoto || userObj.userProfilePhotoUrl || userObj.profilePhotoUrl || userObj.profilePhoto || userObj.avatar || post.userProfilePhoto || null
       );
@@ -745,7 +759,7 @@ const Home = () => {
               <p className="italic text-gray-600 mb-6">{userEmail}</p>
               <div id='info' className="flex gap-6 mb-6 text-black">
                 <aside className="flex justify-center items-center flex-col">
-                  <h2 className="text-[20px] font-bold text-blue-600">{posts.length}</h2>
+                  <h2 className="text-[20px] font-bold text-blue-600">{myPostsCount}</h2>
                   <p className="text-sm text-gray-600">Posts</p>
                 </aside>
                 <aside className="flex justify-center items-center flex-col">
@@ -812,7 +826,7 @@ const Home = () => {
                       />
                       <div>
                         <h3 className="font-semibold text-gray-800">
-                          {userName}
+                          {userDisplayName}
                         </h3>
                         <p className="text-sm text-gray-500">
                           {post.createdAt ? formatTime(post.createdAt) : 'Recently'}
@@ -968,7 +982,3 @@ const Home = () => {
 };
 
 export default Home;
-
-
-// !!!!!!!!!!!!!!!!!!!!!!!!!!!
-

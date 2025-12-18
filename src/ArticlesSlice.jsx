@@ -38,8 +38,15 @@ export const fetchPosts = createAsyncThunk(
         count: response.data?.length || response.data?.articles?.length || 0
       });
       
+      // 🔍 DEBUG: Log first post to see structure
+      const articlesArray = response.data?.articles || response.data || [];
+      if (articlesArray.length > 0) {
+        console.log('🔍 fetchPosts - First post structure:', articlesArray[0]);
+        console.log('🔍 fetchPosts - First post keys:', Object.keys(articlesArray[0]));
+      }
+      
       // Handle different response structures
-      return response.data?.articles || response.data || [];
+      return articlesArray;
     } catch (error) {
       log('error', 'Failed to fetch articles', {
         status: error.response?.status,
@@ -376,14 +383,23 @@ export const fetchPostById = fetchArticleById;
 
 // ==================== SLICE DEFINITION ====================
 
-// Normalize article shape so each article has a consistent author object
-// with `userProfilePhoto` populated when available from multiple server shapes.
+// ✅ Normalize article shape so each article has a consistent author object
+// CRITICAL: This ensures post.author/post.user contains the ACTUAL POST AUTHOR's data
+// (username, profilePhoto), NOT the currently logged-in user's data
 const normalizeArticle = (raw) => {
   if (!raw || typeof raw !== 'object') return raw;
   const article = Array.isArray(raw) ? raw : { ...raw };
 
-  // Determine user object from common fields
-  const user = article.user || article.author || article.postedBy || null;
+  // 🔍 DEBUG: Log raw article structure
+  console.log('🔍 ArticlesSlice normalizeArticle - Raw article keys:', Object.keys(article).slice(0, 20));
+  console.log('🔍 ArticlesSlice normalizeArticle - user:', article.user);
+  console.log('🔍 ArticlesSlice normalizeArticle - author:', article.author);
+  console.log('🔍 ArticlesSlice normalizeArticle - postedBy:', article.postedBy);
+  console.log('🔍 ArticlesSlice normalizeArticle - createdBy:', article.createdBy);
+
+  // ✅ Extract the post author from backend response (various field names)
+  // This is the ACTUAL author who created the post, could be anyone
+  const user = article.user || article.author || article.postedBy || article.createdBy || null;
 
   const candidate = (u) => {
     if (!u || typeof u !== 'object') return null;
@@ -397,11 +413,15 @@ const normalizeArticle = (raw) => {
 
   const userPhoto = candidate(user) || article.userProfilePhoto || article.profilePhoto || article.profilePhotoUrl || null;
 
-  // Build a normalizedUser object
+  // ✅ Build normalized author object with consistent field names
   const normalizedUser = user && typeof user === 'object' ? { ...user } : {};
   if (userPhoto) normalizedUser.userProfilePhoto = normalizedUser.userProfilePhoto || userPhoto;
 
-  // Attach normalized user back to article under `user`
+  // 🔍 DEBUG: Log normalized result
+  console.log('✅ ArticlesSlice normalizeArticle - Normalized user:', normalizedUser);
+
+  // ✅ Attach normalized author back to article under `user` field
+  // Result: post.user = { _id, username, profilePhoto, ... } of the POST AUTHOR
   const normalized = { ...article, user: normalizedUser };
   return normalized;
 };
