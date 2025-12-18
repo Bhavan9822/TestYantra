@@ -72,9 +72,18 @@ const Profile = () => {
 
   const { displayName, email, photoURL, bio = 'No bio yet', interests = [] } = currentUser;
 
+  // ✅ Filter to show only MY posts (not friends' posts)
+  const myPosts = useMemo(() => {
+    if (!currentUser?._id || !Array.isArray(posts)) return [];
+    return posts.filter(post => {
+      const authorId = post.author?._id || post.user?._id || post.postedBy?._id || post.userId;
+      return authorId === currentUser._id;
+    });
+  }, [posts, currentUser]);
+  
   // Prefer server-provided articles/posts on the user object. Normalize shapes.
-  const userArticlesRaw = currentUser.articles || currentUser.posts || [];
-  const postsCount = currentUser.postsCount ?? userArticlesRaw.length;
+  const userArticlesRaw = currentUser.articles || currentUser.posts || myPosts;
+  const postsCount = myPosts.length;
 
   const articles = (Array.isArray(userArticlesRaw) ? userArticlesRaw : []).map((a, i) => {
     const id = a._id || a.id || a.slug || `article-${i}`;
@@ -164,7 +173,8 @@ const Profile = () => {
         {/* Stats */}
         <div className="flex justify-center gap-8 mt-8">
           <div className="bg-white dark:bg-blue-500 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center">
-            <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{posts.length}</h3>
+            {/* ✅ Shows only MY posts count, not all posts */}
+            <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{myPosts.length}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Posts</p>
           </div>
           <div className="bg-white dark:bg-purple-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center">
