@@ -13,11 +13,11 @@ import {
   followRequestReceived,
   fetchAllUsers
 } from '../usersSlice';
-import  { incrementFollowing }  from '../Slice';
-import { incrementFollowers }  from '../Slice';
+import  { incrementFollowing, addToFollowing }  from '../Slice';
+import { incrementFollowers, addToFollowers }  from '../Slice';
 import NotificationBell from '../component/NotificationBell';
 import { connectSocket, on as socketOn } from '../socket';
-import { createPost, fetchPosts } from '../ArticlesSlice';
+import { createPost, fetchPosts, injectAuthorUsername } from '../ArticlesSlice';
 import { toggleLike, optimisticToggleLike } from '../LikeSlice';
 import { formatTime } from '../FormatTime';
 import { toast } from 'react-toastify';
@@ -107,6 +107,31 @@ const Home = () => {
   const userProfilePhoto = userPhoto;
   const userName = useMemo(() => currentUser?.username || "User", [currentUser]);
   const userEmail = useMemo(() => currentUser?.email || "user@example.com", [currentUser]);
+
+  // Helper function to resolve username by author ID
+  const resolveUsernameById = useCallback((authorId) => {
+    if (!authorId) return 'Unknown';
+    
+    // Check if it's the current user
+    if (currentUser?._id === authorId) {
+      return currentUser.username || 'User';
+    }
+    
+    // Look in followers array
+    if (Array.isArray(currentUser?.followers)) {
+      const follower = currentUser.followers.find(f => f._id === authorId || f.userId === authorId);
+      if (follower?.username) return follower.username;
+    }
+    
+    // Look in following array
+    if (Array.isArray(currentUser?.following)) {
+      const following = currentUser.following.find(f => f._id === authorId || f.userId === authorId);
+      if (following?.username) return following.username;
+    }
+    
+    // Fallback
+    return 'Unknown';
+  }, [currentUser]);
 
   // Count only the logged-in user's posts (not friends' posts)
   const myPostsCount = useMemo(() => {
@@ -365,14 +390,56 @@ const Home = () => {
             }));
           }
           
-          // 🔥 UPDATE FOLLOWER/FOLLOWING COUNTS
-          // If current user is the requester (User A), increment their following count
-          if (payload.requesterId === currentUser?._id) {
-            dispatch(incrementFollowing());
+          // 🔥 HELPER: Extract username from payload, searchResults, or use fallback
+          const getUsername = (userId) => {
+            // Try to get from searchResults first
+            if (Array.isArray(searchResults)) {
+              const found = searchResults.find(u => u._id === userId);
+              if (found?.username) return found.username;
+            }
+            // Return null if not found (will be handled by caller)
+            return null;
+          };
+          
+          // 🔥 UPDATE FOLLOWER/FOLLOWING WITH USER DATA
+          // If current user is the requester (User A), add followed user to their following list
+          if (payload.requesterId === currentUser?._id && payload.targetUserId) {
+            // Try to get username from payload or searchResults
+            let username = payload.targetUser?.username || getUsername(payload.targetUserId);
+            // Only dispatch if we have the username
+            if (username) {
+              dispatch(addToFollowing({
+                _id: payload.targetUserId,
+                username: username
+              }));
+              // 🔥 INJECT USERNAME INTO ARTICLES for instant display
+              dispatch(injectAuthorUsername({
+                userId: payload.targetUserId,
+                username: username
+              }));
+            } else {
+              console.warn('[followRequestAccepted] Could not resolve targetUser username');
+            }
           }
-          // If current user is the recipient (User B), increment their followers count
-          if (payload.targetUserId === currentUser?._id) {
-            dispatch(incrementFollowers());
+          
+          // If current user is the recipient (User B), add follower to their followers list
+          if (payload.targetUserId === currentUser?._id && payload.requesterId) {
+            // Try to get username from payload or searchResults
+            let username = payload.requesterUser?.username || getUsername(payload.requesterId);
+            // Only dispatch if we have the username
+            if (username) {
+              dispatch(addToFollowers({
+                _id: payload.requesterId,
+                username: username
+              }));
+              // 🔥 INJECT USERNAME INTO ARTICLES for instant display
+              dispatch(injectAuthorUsername({
+                userId: payload.requesterId,
+                username: username
+              }));
+            } else {
+              console.warn('[followRequestAccepted] Could not resolve requesterUser username');
+            }
           }
           
           toast.success('Follow request accepted!');
@@ -516,7 +583,11 @@ const Home = () => {
     return posts.map((post) => {
       const postId = post._id || post.id || post.postId || null;
       const userObj = post.user || post.author || post.postedBy || {};
-      const userDisplayName = `${userName}` || userObj.name || `${userObj.firstName || ''} ${userObj.lastName || ''}`.trim() || 'Community Member';
+      
+      // Resolve username: try post.author.username first, then resolve by author ID
+      const authorId = userObj._id || post.userId || null;
+      const userDisplayName = userObj.username || resolveUsernameById(authorId);
+      
       const userProfilePhoto = getImageSrc(
         userObj.userProfilePhoto || userObj.userProfilePhotoUrl || userObj.profilePhotoUrl || userObj.profilePhoto || userObj.avatar || post.userProfilePhoto || null
       );
@@ -525,7 +596,7 @@ const Home = () => {
       const isLiking = !!(likeOperations && postId && likeOperations[postId]);
       return { post, postId, userDisplayName, userProfilePhoto, hasLiked, likeCount, isLiking };
     });
-  }, [posts, articleLikesMap, likeOperations, currentUser, getImageSrc]);
+  }, [posts, articleLikesMap, likeOperations, currentUser, getImageSrc, resolveUsernameById]);
 
   // Render search results dropdown
   const renderSearchResults = () => {
@@ -628,10 +699,21 @@ const Home = () => {
           </aside>
           
           <aside id='as2' className="flex-[30%] flex justify-center items-center relative" ref={searchRef}>
-         <form action="" className='border-2 ' onSubmit={handelfollowsubmit}>
-             <input type="text" onChange={handelFollow}/>
-            <button>click</button>
-         </form>
+            <form action="" onSubmit={handelfollowsubmit} className='flex items-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-full border-2 border-gray-300 hover:border-blue-400 transition-colors'>
+              <input 
+                type="text" 
+                onChange={handelFollow} 
+                placeholder='Search users...' 
+                className='bg-transparent px-4 py-2 text-gray-700 placeholder-gray-400 focus:outline-none flex-1 min-w-0'
+              />
+              <button 
+                type='submit'
+                className='px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium rounded-full hover:from-blue-600 hover:to-purple-600 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-2 whitespace-nowrap'
+              >
+                <i className="fa-solid fa-magnifying-glass text-sm"></i>
+                Send
+              </button>
+            </form>
           </aside>
           
           <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">

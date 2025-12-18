@@ -1,17 +1,32 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
+import {  useDispatch } from 'react-redux';
 import { selectUnreadCount } from '../NotificationSlice';
+import { sendFollowRequest } from '../SearchSlice';
+
 
 const Profile = () => {
   const { currentUser } = useSelector((state) => state.auth || {});
   const [isDark, setIsDark] = useState(false);
+  const dispatch = useDispatch();
 
   const followersCount = currentUser?.followers?.length || 0;
   const followingCount = currentUser?.following?.length || 0;
 
   const navigate = useNavigate();
   const unreadCount = useSelector(selectUnreadCount) || 0;
+
+  const searchRef = useRef(null);
+  const [inp,setinp]=useState("")
+
+  const handelFollow=(e)=>{
+      setinp(e.target.value);
+    }
+  const handelfollowsubmit=(e)=>{
+      e.preventDefault();
+      dispatch(sendFollowRequest({"targetUsername": inp }));
+    }
 
   // Get data from Redux store
   const { posts = [], loading = false, error = null, createPostLoading = false } = useSelector((state) => state.articles || {});
@@ -101,11 +116,22 @@ const Profile = () => {
           <aside id='as1' className="flex-[30%]">
             <h1 className="font-bold text-[35px] ml-[30px] mt-[12px] bg-gradient-to-r from-[rgb(0,98,255)] via-[rgb(128,0,119)] to-pink bg-clip-text text-transparent">SocialMedia</h1>
           </aside>
-          <aside id='as2' className="flex-[30%] flex justify-center items-center">
-            <div id='searchbar'>
-              <input type="text" placeholder='Search...' className="border-2 border-black h-[40px] w-[30vw] rounded-[10px] pl-[15px] text-black" />
-            </div>
-            <i className="fa-solid fa-magnifying-glass relative top-[10px] right-[30px] h-[35px] w-[45px] rounded-tr-[10px] rounded-br-[10px] grid place-items-center text-black "></i>
+          <aside id='as2' className="flex-[30%] flex justify-center items-center relative" ref={searchRef}>
+            <form action="" onSubmit={handelfollowsubmit} className='flex items-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-full border-2 border-gray-300 hover:border-blue-400 transition-colors'>
+              <input 
+                type="text" 
+                onChange={handelFollow} 
+                placeholder='Search users...' 
+                className='bg-transparent px-4 py-2 text-gray-700 placeholder-gray-400 focus:outline-none flex-1 min-w-0'
+              />
+              <button 
+                type='submit'
+                className='px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium rounded-full hover:from-blue-600 hover:to-purple-600 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-2 whitespace-nowrap'
+              >
+                <i className="fa-solid fa-magnifying-glass text-sm"></i>
+                Send
+              </button>
+            </form>
           </aside>
           <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
             <div className="flex gap-[35px] pr-[45px] nav_div">
