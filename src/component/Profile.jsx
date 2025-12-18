@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import {  useDispatch } from 'react-redux';
 import { selectUnreadCount } from '../NotificationSlice';
 import { sendFollowRequest } from '../SearchSlice';
+import { logout } from '../Slice';
+import { toast } from 'react-toastify';
 
 
 const Profile = () => {
@@ -23,10 +25,59 @@ const Profile = () => {
   const handelFollow=(e)=>{
       setinp(e.target.value);
     }
-  const handelfollowsubmit=(e)=>{
+  const handelfollowsubmit = async (e) => {
       e.preventDefault();
-      dispatch(sendFollowRequest({"targetUsername": inp }));
+      const username = inp.trim();
+      
+      if (!username) {
+        toast.error('Please enter a username');
+        return;
+      }
+
+      try {
+        const result = await dispatch(sendFollowRequest({ targetUsername: username })).unwrap();
+        
+        if (result.success || result.message === 'Follow request sent successfully') {
+          toast.success(`Follow request sent to ${username}`);
+        } else if (result.message?.includes('already following') || result.error?.includes('already following')) {
+          toast.info(`You are already following ${username}`);
+        } else if (result.message?.includes('pending') || result.error?.includes('pending')) {
+          toast.info(`Follow request already sent to ${username}`);
+        } else {
+          toast.success('Follow request sent successfully');
+        }
+      } catch (error) {
+        console.error('Follow request failed:', error);
+        
+        if (error?.includes?.('not found') || error?.includes?.('does not exist')) {
+          toast.error(`User "${username}" not found`);
+        } else if (error?.includes?.('already following')) {
+          toast.info(`You are already following ${username}`);
+        } else if (error?.includes?.('pending')) {
+          toast.info(`Follow request already pending for ${username}`);
+        } else if (error?.includes?.('yourself')) {
+          toast.error("You can't follow yourself");
+        } else {
+          toast.error(error || 'Failed to send follow request');
+        }
+      } finally {
+        setinp('');
+      }
     }
+
+  // Logout functionality
+  const handleLogout = () => {
+    // Dispatch Redux logout action (clears Redux state and localStorage)
+    dispatch(logout());
+    
+    // Clear any additional localStorage items
+    localStorage.removeItem('userId');
+    localStorage.removeItem('profilePhoto');
+  
+    
+    // Navigate to login page
+    navigate('/', { replace: true });
+  }
 
   // Get data from Redux store
   const { posts = [], loading = false, error = null, createPostLoading = false } = useSelector((state) => state.articles || {});
@@ -119,8 +170,7 @@ const Profile = () => {
           <aside id='as2' className="flex-[30%] flex justify-center items-center relative" ref={searchRef}>
             <form action="" onSubmit={handelfollowsubmit} className='flex items-center gap-2 bg-gradient-to-r from-blue-50 to-purple-50 p-2 rounded-full border-2 border-gray-300 hover:border-blue-400 transition-colors'>
               <input 
-                type="text" 
-                onChange={handelFollow} 
+                type="text"                 value={inp}                onChange={handelFollow} 
                 placeholder='Search users...' 
                 className='bg-transparent px-4 py-2 text-gray-700 placeholder-gray-400 focus:outline-none flex-1 min-w-0'
               />
@@ -213,6 +263,17 @@ const Profile = () => {
           </div>
         </div>
 
+        {/* Logout Button */}
+        <div id='logout' className="flex justify-center mt-8">
+          <button
+            onClick={handleLogout}
+            className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white font-semibold rounded-full hover:from-red-600 hover:to-red-700 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-2 shadow-lg"
+          >
+            <i className="fa-solid fa-right-from-bracket"></i>
+            Logout
+          </button>
+        </div>
+
         {/* Articles Section */}
         <div className="w-full max-w-4xl mt-12 px-4">
           <div className="text-center mb-8">
@@ -225,21 +286,25 @@ const Profile = () => {
             {articles.map(article => (
               <div
                 key={article.id}
-                className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition flex items-center justify-between"
+                onClick={() => navigate(`/indarticle/${article.id}`)}
+                className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition flex items-center justify-between cursor-pointer"
               >
                 <div className="flex-1">
                   <h3 className="font-bold text-lg text-gray-800 dark:text-white">
                     {article.title}
                   </h3>
                   <div className="flex items-center gap-3 mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span>{article.author}</span>
-                    <span>•</span>
+                    {/* <span>{article.author}</span> */}
+                    {/* <span>•</span> */}
                     <span>{article.date}</span>
                   </div>
                 </div>
-                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md">
-                  {article.initials}
-                </div>
+                <img 
+                  src={userPhoto} 
+                  alt={userName}
+                  className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md"
+                  onError={(e) => { e.target.onerror = null; e.target.src = defaultAvatar; }}
+                />
               </div>
             ))}
           </div>

@@ -455,3 +455,10 @@
   /* border: 2px solid blue; */
   width: fit-content;
 }
+
+#logout{
+  /* border: 2px solid blue; */
+  position: absolute;
+  top: 80px;
+  right: 50px;
+}
