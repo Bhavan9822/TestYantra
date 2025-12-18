@@ -68,8 +68,8 @@ const App = () => {
 
       {/* 🔁 Routes */}
       <Routes>
-        <Route path="/" element={<Regisphoto />} />
-        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Regisphoto />} />
+        <Route path="/" element={<Login />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/home" element={<Home />} />
         <Route path="/articles" element={<Articles />} />

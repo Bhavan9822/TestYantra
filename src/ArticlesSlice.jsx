@@ -511,7 +511,26 @@ const articlesSlice = createSlice({
       state.updateLoading = false;
       state.updateError = null;
       state.lastFetched = null;
-    }
+    },
+
+    // 🔥 NEW: Update article author username when follow is accepted
+    // Injects username into post.user.username based on userId
+    injectAuthorUsername: (state, action) => {
+      const { userId, username } = action.payload;
+      if (!userId || !username) return;
+
+      // Update all posts where user._id matches userId
+      state.posts.forEach((post) => {
+        if (post.user && post.user._id === userId) {
+          post.user.username = username;
+        }
+      });
+
+      // Also update currentArticle if it matches
+      if (state.currentArticle && state.currentArticle.user && state.currentArticle.user._id === userId) {
+        state.currentArticle.user.username = username;
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -664,7 +683,8 @@ export const {
   updatePostOptimistically,
   addCommentOptimistically,
   removePost,
-  resetArticles
+  resetArticles,
+  injectAuthorUsername
 } = articlesSlice.actions;
 
 // ==================== SELECTORS ====================

@@ -77,7 +77,7 @@ const Regisphoto = () => {
       setRegistrationSuccess(true);
       toast.success('Registration successful! Redirecting to login...');
       const timer = setTimeout(() => {
-        navigate("/login", { state: { registered: true } });
+        navigate("/", { state: { registered: true } });
       }, 1500);
       return () => clearTimeout(timer);
     }
@@ -548,7 +548,7 @@ const Regisphoto = () => {
               Already have an account?{" "}
               <button
                 type="button"
-                onClick={() => navigate("/login")}
+                onClick={() => navigate("/")}
                 className="text-blue-800 font-semibold hover:underline transition-colors hover:text-blue-900"
               >
                 Login here

@@ -205,7 +205,7 @@ const Articles = () => {
     }
 
     // Final fallback
-    return 'Community Member';
+    return 'Unknown';
   }, [currentUser, getUserFromPost]);
 
   // Enhanced helper to get user's profile photo — check many possible shapes
@@ -252,13 +252,26 @@ const Articles = () => {
     return getImageSrc(user.profilePhoto || user.profilePhotoUrl || user.avatar || user.image || user.picture || user.photo || defaultImage);
   }, [getUserFromPost, getImageSrc]);
 
-  // Combine posts for display
+  // Filter to show only the logged-in user's posts
+  const myPosts = useMemo(() => {
+    if (!currentUser?._id || !Array.isArray(posts)) return [];
+    return posts.filter((post) => {
+      const authorId = 
+        post.author?._id || 
+        post.user?._id || 
+        post.postedBy?._id || 
+        post.userId;
+      return authorId === currentUser._id;
+    });
+  }, [posts, currentUser]);
+
+  // Combine posts for display (only user's own posts)
   const topPost = fetchedNewPost || newPostFromNav || null;
   const combinedPosts = useMemo(() => 
     topPost
-      ? [topPost, ...posts.filter(p => (p._id || p.id) !== (topPost._id || topPost.id))]
-      : posts,
-    [topPost, posts]
+      ? [topPost, ...myPosts.filter(p => (p._id || p.id) !== (topPost._id || topPost.id))]
+      : myPosts,
+    [topPost, myPosts]
   );
 
   // Select the raw articleLikes map from Redux (stable reference when unchanged)

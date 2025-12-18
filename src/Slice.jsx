@@ -482,6 +482,36 @@ const authSlice = createSlice({
       state.currentUser.following.push(action.payload || "socket");
       localStorage.setItem("authUser", JSON.stringify(state.currentUser));
     },
+
+    // ===============================
+    // 🔥 ADDED: UPDATE FOLLOWERS/FOLLOWING WITH USER DATA
+    // ===============================
+    // Adds user to followers or following array with full user data including username
+    addToFollowers(state, action) {
+      if (!state.currentUser) return;
+      if (!Array.isArray(state.currentUser.followers)) {
+        state.currentUser.followers = [];
+      }
+      const user = action.payload; // { _id, username, ... }
+      // Avoid duplicates
+      if (!state.currentUser.followers.some(f => f._id === user._id)) {
+        state.currentUser.followers.push(user);
+        localStorage.setItem("authUser", JSON.stringify(state.currentUser));
+      }
+    },
+
+    addToFollowing(state, action) {
+      if (!state.currentUser) return;
+      if (!Array.isArray(state.currentUser.following)) {
+        state.currentUser.following = [];
+      }
+      const user = action.payload; // { _id, username, ... }
+      // Avoid duplicates
+      if (!state.currentUser.following.some(f => f._id === user._id)) {
+        state.currentUser.following.push(user);
+        localStorage.setItem("authUser", JSON.stringify(state.currentUser));
+      }
+    },
   },
   extraReducers: (builder) => {
     // REGISTER
@@ -556,6 +586,8 @@ export const {
   setToken,
   incrementFollowers,
   incrementFollowing,
+  addToFollowers,
+  addToFollowing,
 } = authSlice.actions;
 
 export default authSlice.reducer;
