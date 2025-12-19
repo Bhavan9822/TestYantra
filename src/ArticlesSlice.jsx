@@ -531,6 +531,49 @@ const articlesSlice = createSlice({
         state.currentArticle.user.username = username;
       }
     },
+
+    // ❤️ NEW: Update article likes (from socket or API)
+    // Supports both { articleId, article } (full article) and { articleId, likes, likesCount } (partial)
+    updateArticleLikes: (state, action) => {
+      const { articleId, article, likes, likesCount } = action.payload;
+      
+      // Update in posts array
+      const postIndex = state.posts.findIndex(p => (p._id || p.id) === articleId);
+      if (postIndex !== -1) {
+        if (article) {
+          // Replace entire article (from API response)
+          state.posts[postIndex] = article;
+        } else {
+          // Partial update (from socket or optimistic)
+          if (likes !== undefined) {
+            state.posts[postIndex].likedBy = likes;
+            state.posts[postIndex].likes = likes;
+          }
+          if (likesCount !== undefined) {
+            state.posts[postIndex].likeCount = likesCount;
+            state.posts[postIndex].likesCount = likesCount;
+          }
+        }
+      }
+      
+      // Update currentArticle if it's the liked article
+      if (state.currentArticle && (state.currentArticle._id === articleId || state.currentArticle.id === articleId)) {
+        if (article) {
+          // Replace entire article
+          state.currentArticle = article;
+        } else {
+          // Partial update
+          if (likes !== undefined) {
+            state.currentArticle.likedBy = likes;
+            state.currentArticle.likes = likes;
+          }
+          if (likesCount !== undefined) {
+            state.currentArticle.likeCount = likesCount;
+            state.currentArticle.likesCount = likesCount;
+          }
+        }
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -684,7 +727,8 @@ export const {
   addCommentOptimistically,
   removePost,
   resetArticles,
-  injectAuthorUsername
+  injectAuthorUsername,
+  updateArticleLikes
 } = articlesSlice.actions;
 
 // ==================== SELECTORS ====================

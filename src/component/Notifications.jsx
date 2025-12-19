@@ -15,7 +15,7 @@ import {
 } from "../NotificationSlice";
 
 import { formatTime } from "../FormatTime";
-import  sendFollowRequest  from "../FollowSendSlice";
+import { sendFollowByUsername } from "../FollowSendSlice";
 import NotificationBell from "./NotificationBell";
 import { toast } from 'react-toastify';
 
@@ -49,7 +49,7 @@ const Notifications = () => {
       }
 
       try {
-        const result = await dispatch(sendFollowRequest({ targetUsername: username })).unwrap();
+        const result = await dispatch(sendFollowByUsername(username)).unwrap();
         
         if (result.success || result.message === 'Follow request sent successfully') {
           toast.success(`Follow request sent to ${username}`);
@@ -235,7 +235,7 @@ const Notifications = () => {
         </nav>
     <div>
       {/* ================= HEADER ================= */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between mt-25 items-center mb-6">
         <h2 className="text-3xl font-bold">Notifications</h2>
 
         <div className="flex gap-2">
@@ -280,7 +280,9 @@ const Notifications = () => {
                 {n.fromUsername || "Someone"}
               </p>
 
-              <p className="text-gray-700">{n.message}</p>
+              <p className="text-gray-700">
+                {n.message || (n.type === 'ARTICLE_LIKED' ? `${n.fromUsername || 'Someone'} liked your article` : '')}
+              </p>
 
               <p className="text-sm text-gray-500 mt-1">
                 {formatTime(n.createdAt)}

@@ -17,11 +17,127 @@ import  { incrementFollowing, addToFollowing }  from '../Slice';
 import { incrementFollowers, addToFollowers }  from '../Slice';
 import NotificationBell from '../component/NotificationBell';
 import { connectSocket, on as socketOn } from '../socket';
-import { createPost, fetchPosts, injectAuthorUsername } from '../ArticlesSlice';
-import { toggleLike, optimisticToggleLike } from '../LikeSlice';
+import { createPost, fetchPosts, injectAuthorUsername, updateArticleLikes } from '../ArticlesSlice';
+import { toggleLike, optimisticToggleLike, selectIsLiking } from '../LikeSlice';
 import { formatTime } from '../FormatTime';
 import { toast } from 'react-toastify';
 import { sendFollowRequest } from '../SearchSlice';
+
+// PostCard component to properly use hooks
+const PostCard = ({ post, postId, userDisplayName, userProfilePhoto, userPhoto, currentUser, handleLikeClick, handleShowComments, handleOpenShare, commentsVisible, getCommentUserName, getCommentUserPhoto, handleShowMoreComments }) => {
+  // Derive isLiked from article.likedBy instead of manually toggling
+  const likedBy = post.likedBy || post.likes || [];
+  const currentId = String(currentUser?._id || '');
+  const hasLiked = likedBy.some(x => {
+    const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+    return String(id) === currentId;
+  });
+  const likeCount = post.likeCount ?? post.likesCount ?? likedBy.length ?? 0;
+  const isLiking = useSelector((state) => selectIsLiking(state, postId));
+
+  return (
+    <article className="bg-white rounded-[15px] shadow-lg hover:shadow-xl transition-all duration-300">
+      <div className="p-6">
+        {/* Post Header */}
+        <div className="flex items-center gap-4 mb-4">
+          <img 
+            src={userProfilePhoto || userPhoto} 
+            alt={userDisplayName} 
+            className="w-12 h-12 rounded-full object-cover border border-gray-300" 
+            onError={(e) => e.target.src = userPhoto}
+          />
+          <div>
+            <h3 className="font-semibold text-gray-800">
+              {userDisplayName}
+            </h3>
+            <p className="text-sm text-gray-500">
+              {post.createdAt ? formatTime(post.createdAt) : 'Recently'}
+            </p>
+          </div>
+        </div>
+
+        {/* Post Content */}
+        <div className="border border-gray-200 bg-gray-50 rounded-[12px] p-4 mb-4">
+          <h4 className="text-xl font-bold text-gray-800 mb-2">
+            {post.title || 'Untitled Post'}
+          </h4>
+          <p className="text-gray-700 leading-relaxed">
+            {post.content}
+          </p>
+        </div>
+
+        {/* Post Actions */}
+        <div className="flex items-center gap-8 text-gray-600">
+          <button
+            onClick={(e) => handleLikeClick(e, post)}
+            disabled={isLiking}
+            className={`like-button flex items-center gap-2 transition-all duration-200 ${
+              hasLiked ? 'text-red-500' : 'text-gray-600'
+            } hover:text-red-500 cursor-pointer ${hasLiked ? 'animate-heart-like' : ''}`}
+            style={{ opacity: isLiking ? 0.6 : 1 }}
+          >
+            <i className={`fa${hasLiked ? '-solid' : '-regular'} fa-heart text-xl`}></i>
+            <span className="font-medium">{likeCount}</span>
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleShowComments(postId); }}
+            className="flex items-center gap-2 hover:text-blue-500 transition-colors cursor-pointer"
+          >
+            <i className="fa-regular fa-comment"></i>
+            <span>{post.comments?.length || 0}</span>
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleOpenShare(postId); }}
+            className="flex items-center gap-2 hover:text-green-500 transition-colors cursor-pointer"
+          >
+            {/* <i className="fa-solid fa-share"></i> */}
+          </button>
+        </div>
+
+        {/* Comments Section */}
+        {commentsVisible[postId] > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <h5 className="font-semibold text-gray-700 mb-3">Comments</h5>
+            <div className="space-y-3">
+              {(post.comments || []).slice(0, commentsVisible[postId]).map((comment, index) => {
+                const commentUserName = getCommentUserName(comment);
+                const commentUserPhoto = getCommentUserPhoto(comment);
+
+                return (
+                  <div key={comment._id || index} className="flex gap-3 items-start">
+                    <img 
+                      src={commentUserPhoto || userPhoto} 
+                      alt={commentUserName} 
+                      className="w-8 h-8 rounded-full object-cover flex-shrink-0" 
+                      onError={(e) => e.target.src = userPhoto}
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm">
+                        <span className="font-semibold">{commentUserName}</span>{' '}
+                        {comment.content || comment.text || ''}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {formatTime(comment.createdAt || comment.created_at || comment.date)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {(post.comments || []).length > commentsVisible[postId] && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleShowMoreComments(postId); }}
+                className="text-blue-500 text-sm font-medium mt-2 hover:text-blue-600 cursor-pointer"
+              >
+                Show more comments
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </article>
+  );
+};
 
 const Home = () => {
   const navigate = useNavigate();
@@ -44,9 +160,6 @@ const Home = () => {
     chatMessages = [], 
     chatLoading = false,
   } = useSelector((state) => state.search || {});
-  
-  const articleLikesMap = useSelector((state) => state.likes?.articleLikes || {});
-  const likeOperations = useSelector((state) => state.likes?.likeOperations || {});
 
   const searchRef = useRef(null);
   const navInputRef = useRef(null);
@@ -182,7 +295,6 @@ const Home = () => {
   }, [posts, currentUser]);
 
   // State for UI
-  const [likeOverrides, setLikeOverrides] = useState({});
   const [searchQuery, setSearchQuery] = useState({
     targetUsername:""
   });
@@ -569,46 +681,104 @@ const Home = () => {
     }
   }, [dispatch, newPostTitle, newPostContent, handleCloseCreateModal]);
 
-  // Handle like/unlike for posts (used by post list)
-  const handleToggleLike = useCallback(async (postId) => {
+  // Handle like/unlike for posts
+  const handleLikeClick = useCallback(async (e, post) => {
+    e.stopPropagation();
+    
     if (!currentUser?._id) {
-      navigate('/login');
+      toast.error('Please login to like articles');
       return;
     }
 
-    // Find the post object for metadata (title, owner)
-    const post = (posts || []).find(p => (p._id || p.id) === postId);
-    const articleOwnerId = post?.user?._id || post?.userId || post?.author?._id || post?.postedBy?._id || null;
-    const currentLikes = (articleLikesMap && articleLikesMap[postId] && articleLikesMap[postId].likes) || post?.likes || [];
-    const currentlyLiked = !!((articleLikesMap && articleLikesMap[postId] && articleLikesMap[postId].isLikedByUser) || (Array.isArray(currentLikes) && currentLikes.some(l => (typeof l === 'string' ? l === currentUser._id : (l.userId === currentUser._id || l._id === currentUser._id || l.id === currentUser._id)))));
+    const articleId = post._id || post.id;
+    const likedBy = post.likedBy || post.likes || [];
+    const currentId = String(currentUser._id);
+    const hasLiked = likedBy.some(x => {
+      const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+      return String(id) === currentId;
+    });
+    
+    // OPTIMISTIC UPDATE: toggle like state
+    const newLikedBy = hasLiked
+      ? likedBy.filter(x => {
+          const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+          return String(id) !== currentId;
+        })
+      : [...likedBy, currentUser._id];
+    
+    dispatch(updateArticleLikes({
+      articleId,
+      likes: newLikedBy,
+      likesCount: newLikedBy.length,
+    }));
+    
+    dispatch(optimisticToggleLike({ articleId }));
 
-    // Optimistic update
     try {
-      dispatch(optimisticToggleLike({ articleId: postId, userId: currentUser._id, currentLikes }));
-    } catch (e) {
-      console.warn('Optimistic like update failed', e);
-    }
-
-    try {
-      await dispatch(toggleLike({ 
-        articleId: postId, 
-        userId: currentUser._id, 
-        wasLikedBefore: currentlyLiked,
-        articleOwnerId,
-        articleTitle: post?.title || '',
-        currentUserName: currentUser?.username || currentUser?.name || ''
+      const result = await dispatch(toggleLike({
+        articleId,
+        userId: currentUser._id,
       })).unwrap();
-    } catch (err) {
-      console.error('Like toggle failed:', err);
-      // revert optimistic update by toggling back using previous likes
-      try {
-        dispatch(optimisticToggleLike({ articleId: postId, userId: currentUser._id, currentLikes }));
-      } catch (e) {
-        console.warn('Failed to revert optimistic like', e);
-      }
-      toast.error('Failed to update like. Please try again.');
+      
+      // Update with backend response article
+      dispatch(updateArticleLikes({
+        articleId,
+        article: result.article,
+      }));
+    } catch (error) {
+      console.error('❌ Like failed:', error);
+      // Rollback to original state
+      dispatch(updateArticleLikes({
+        articleId,
+        likes: likedBy,
+        likesCount: likedBy.length,
+      }));
+      toast.error('Failed to update like');
     }
-  }, [dispatch, currentUser, navigate, posts, articleLikesMap]);
+  }, [dispatch, currentUser]);
+
+  // Comment and share handlers
+  const handleShowComments = useCallback((postId) => {
+    setCommentsVisible((prev) => {
+      const currentlyVisible = prev[postId] || 0;
+      const nextCount = currentlyVisible > 0 ? 0 : 3; // toggle show first 3 or hide
+      return { ...prev, [postId]: nextCount };
+    });
+  }, []);
+
+  const handleShowMoreComments = useCallback((postId) => {
+    setCommentsVisible((prev) => {
+      const nextCount = (prev[postId] || 0) + 3; // show 3 more
+      return { ...prev, [postId]: nextCount };
+    });
+  }, []);
+
+  const handleOpenShare = useCallback((postId) => {
+    setSharePostId(postId);
+    setShowShareModal(true);
+  }, []);
+
+  const getCommentUserName = useCallback((comment) => {
+    return (
+      comment?.user?.username ||
+      comment?.author?.username ||
+      comment?.postedBy?.username ||
+      comment?.username ||
+      'Unknown'
+    );
+  }, []);
+
+  const getCommentUserPhoto = useCallback((comment) => {
+    const src =
+      comment?.user?.profilePhoto ||
+      comment?.author?.profilePhoto ||
+      comment?.postedBy?.profilePhoto ||
+      comment?.profilePhoto ||
+      comment?.avatar ||
+      comment?.image ||
+      null;
+    return getImageSrc(src);
+  }, [getImageSrc]);
 
   // ========== RENDER FUNCTIONS ==========
 
@@ -626,12 +796,9 @@ const Home = () => {
       const userProfilePhoto = getImageSrc(
         userObj.userProfilePhoto || userObj.userProfilePhotoUrl || userObj.profilePhotoUrl || userObj.profilePhoto || userObj.avatar || post.userProfilePhoto || null
       );
-      const hasLiked = !!(articleLikesMap && postId && Array.isArray(articleLikesMap[postId]) && articleLikesMap[postId].includes(currentUser?._id));
-      const likeCount = typeof post.likeCount === 'number' ? post.likeCount : (post.likes && post.likes.length) || 0;
-      const isLiking = !!(likeOperations && postId && likeOperations[postId]);
-      return { post, postId, userDisplayName, userProfilePhoto, hasLiked, likeCount, isLiking };
+      return { post, postId, userDisplayName, userProfilePhoto };
     });
-  }, [posts, articleLikesMap, likeOperations, currentUser, getImageSrc, resolveUsernameById]);
+  }, [posts, currentUser, getImageSrc, resolveUsernameById]);
 
   // Render search results dropdown
   const renderSearchResults = () => {
@@ -928,117 +1095,23 @@ const Home = () => {
                 </button>
               </div>
             ) : (
-              postsData.map(({ post, postId, userDisplayName, userProfilePhoto, hasLiked, likeCount, isLiking }) => (
-                <article 
-                  key={postId} 
-                  className="bg-white rounded-[15px] shadow-lg hover:shadow-xl transition-all duration-300"
-                >
-                  <div className="p-6">
-                    {/* Post Header */}
-                    <div className="flex items-center gap-4 mb-4">
-                      <img 
-                        src={userProfilePhoto || userPhoto} 
-                        alt={userDisplayName} 
-                        className="w-12 h-12 rounded-full object-cover border border-gray-300" 
-                        onError={(e) => e.target.src = userPhoto}
-                      />
-                      <div>
-                        <h3 className="font-semibold text-gray-800">
-                          {userDisplayName}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {post.createdAt ? formatTime(post.createdAt) : 'Recently'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Post Content */}
-                    <div className="border border-gray-200 bg-gray-50 rounded-[12px] p-4 mb-4">
-                      <h4 className="text-xl font-bold text-gray-800 mb-2">
-                        {post.title || 'Untitled Post'}
-                      </h4>
-                      <p className="text-gray-700 leading-relaxed">
-                        {post.content}
-                      </p>
-                    </div>
-
-                    {/* Post Actions with Like Functionality - UPDATED FOR RED COLOR */}
-                    <div className="flex items-center gap-8 text-gray-600">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleToggleLike(postId); }}
-                        disabled={!currentUser?._id || isLiking}
-                        className={`flex items-center gap-2 transition-all duration-200 ${
-                          hasLiked 
-                            ? 'text-red-500 hover:text-red-600' 
-                            : 'text-gray-600 hover:text-red-500'
-                        } ${isLiking ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                      >
-                        {isLiking ? (
-                          <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
-                        ) : (
-                          <i className={`fa${hasLiked ? '-solid' : '-regular'} fa-heart ${hasLiked ? 'text-red-500' : 'text-gray-600'}`}></i>
-                        )}
-                        <span className={`font-medium ${hasLiked ? 'text-red-500' : 'text-gray-700'}`}>
-                          {typeof likeCount === 'number' ? likeCount : Number(likeCount) || 0}
-                        </span>
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleShowComments(postId); }}
-                        className="flex items-center gap-2 hover:text-blue-500 transition-colors cursor-pointer"
-                      >
-                        <i className="fa-regular fa-comment"></i>
-                        <span>{post.comments?.length || 0}</span>
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleOpenShare(postId); }}
-                        className="flex items-center gap-2 hover:text-green-500 transition-colors cursor-pointer"
-                      >
-                        <i className="fa-solid fa-share"></i>
-                      </button>
-                    </div>
-
-                    {/* Comments Section */}
-                    {commentsVisible[postId] > 0 && (
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <h5 className="font-semibold text-gray-700 mb-3">Comments</h5>
-                        <div className="space-y-3">
-                          {(post.comments || []).slice(0, commentsVisible[postId]).map((comment, index) => {
-                            const commentUserName = getCommentUserName(comment);
-                            const commentUserPhoto = getCommentUserPhoto(comment);
-
-                            return (
-                              <div key={comment._id || index} className="flex gap-3 items-start">
-                                <img 
-                                  src={commentUserPhoto || userPhoto} 
-                                  alt={commentUserName} 
-                                  className="w-8 h-8 rounded-full object-cover flex-shrink-0" 
-                                  onError={(e) => e.target.src = userPhoto}
-                                />
-                                <div className="flex-1">
-                                  <p className="text-sm">
-                                    <span className="font-semibold">{commentUserName}</span>{' '}
-                                    {comment.content || comment.text || ''}
-                                  </p>
-                                  <p className="text-xs text-gray-400 mt-1">
-                                    {formatTime(comment.createdAt || comment.created_at || comment.date)}
-                                  </p>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {(post.comments || []).length > commentsVisible[postId] && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleShowMoreComments(postId); }}
-                            className="text-blue-500 text-sm font-medium mt-2 hover:text-blue-600 cursor-pointer"
-                          >
-                            Show more comments
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </article>
+              postsData.map(({ post, postId, userDisplayName, userProfilePhoto }) => (
+                <PostCard
+                  key={postId}
+                  post={post}
+                  postId={postId}
+                  userDisplayName={userDisplayName}
+                  userProfilePhoto={userProfilePhoto}
+                  userPhoto={userPhoto}
+                  currentUser={currentUser}
+                  handleLikeClick={handleLikeClick}
+                  handleShowComments={handleShowComments}
+                  handleOpenShare={handleOpenShare}
+                  commentsVisible={commentsVisible}
+                  getCommentUserName={getCommentUserName}
+                  getCommentUserPhoto={getCommentUserPhoto}
+                  handleShowMoreComments={handleShowMoreComments}
+                />
               ))
             )}
           </section>

@@ -7,13 +7,13 @@ import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./Slice"; // authSlice
 import articlesReducer from "./ArticlesSlice";
 import searchReducer from "./SearchSlice";
-import likeReducer from "./LikeSlice";
 import commentReducer from "./CommentSlice";
 import notificationReducer from "./NotificationSlice";
 import followSendReducer from "./FollowSendSlice";
 import followAcceptReducer from "./FollowAcceptSlice";
 import followRejectReducer from "./FollowRejectSlice";
 import usersReducer from "./usersSlice";
+import likeReducer from "./LikeSlice";
 
 // ================= ASYNC DISPATCH MIDDLEWARE =================
 // Allows dispatching actions AFTER reducers finish (used for socket + login sync)
@@ -47,7 +47,6 @@ const store = configureStore({
     auth: authReducer,
     articles: articlesReducer,
     search: searchReducer,
-    likes: likeReducer,
     comments: commentReducer,
 
     // 🔔 Notifications (socket + localStorage)
@@ -58,6 +57,9 @@ const store = configureStore({
     followAccept: followAcceptReducer,
     followReject: followRejectReducer,
 
+    
+    // ❤️ Likes
+    likes: likeReducer,
     users: usersReducer,
   },
 
