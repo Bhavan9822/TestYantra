@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { fetchArticleById, selectPostById, updatePostOptimistically } from '../ArticlesSlice';
+import { fetchArticleById, selectPostById, updatePostOptimistically, updateArticleLikes } from '../ArticlesSlice';
+import { toggleLike, optimisticToggleLike, selectIsLiking } from '../LikeSlice';
 import { postComment, selectCommentsForArticle, selectCommentsMeta } from '../CommentSlice';
-import { optimisticToggleLike, selectArticleLikes, selectIsLiking, toggleLike } from '../LikeSlice';
 import NotificationBell from './NotificationBell';
 import { formatTime } from '../FormatTime';
 
@@ -36,18 +36,10 @@ const IndArticle = () => {
 
   const displayArticle = displayArticleCandidate || cachedArticleRef.current;
   
-  // Get like state for this article
-  const likeState = useSelector((state) => selectArticleLikes(state, articleId));
-  const isLiking = useSelector((state) => selectIsLiking(state, articleId));
-  
   // Local state
   const [commentInput, setCommentInput] = useState('');
   const [showComments, setShowComments] = useState(true);
-  const [localLikeState, setLocalLikeState] = useState({
-    hasLiked: false,
-    count: 0,
-    isUpdating: false
-  });
+  const isLiking = useSelector((state) => selectIsLiking(state, articleId));
 
   // Static values
   const defaultImage = useMemo(() => "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnnA_0pG5u9vFP1v9a2DKaqVMCEL_0-FXjkduD2ZzgSm14wJy-tcGygo_HZX_2bzMHF8I&usqp=CAU", []);
@@ -93,136 +85,6 @@ const IndArticle = () => {
       dispatch(fetchArticleById(articleId));
     }
   }, [articleId, dispatch]); // Only depend on articleId and dispatch
-
-  // Update local like state when Redux likeState changes
-  useEffect(() => {
-    if (!likeState) return;
-
-    const newHasLiked = Boolean(likeState.isLikedByUser);
-    const newCount = Number(likeState.count || 0);
-
-    setLocalLikeState(prev => {
-      if (prev.hasLiked === newHasLiked && prev.count === newCount && !prev.isUpdating) {
-        return prev;
-      }
-      return {
-        hasLiked: newHasLiked,
-        count: newCount,
-        isUpdating: false
-      };
-    });
-
-    // Mirror like state into the articles list/currentArticle so other views update
-    try {
-      const likesArray = Array.isArray(likeState.likes) ? likeState.likes : [];
-      dispatch(updatePostOptimistically({ articleId, postData: { likes: likesArray } }));
-    } catch (e) {
-      console.warn('Failed to mirror like state to articles slice', e);
-    }
-  }, [likeState, dispatch, articleId]); // Depend on dispatch and articleId for safety
-
-  // Update local like state when article data changes (use fetched article or fallback)
-  useEffect(() => {
-    const source = displayArticle;
-    if (source && currentUser?._id && !localLikeState.isUpdating) {
-      const hasLiked = source.likes?.some(like => 
-        like === currentUser._id || 
-        (like && (like.userId === currentUser._id || like._id === currentUser._id || like.id === currentUser._id))
-      ) || false;
-      
-      const count = source.likes?.length || 0;
-      
-      setLocalLikeState(prev => {
-        if (prev.hasLiked === hasLiked && prev.count === count) {
-          return prev;
-        }
-        return {
-          ...prev,
-          hasLiked,
-          count
-        };
-      });
-    }
-  }, [displayArticle, currentUser?._id, localLikeState.isUpdating]); // Controlled dependencies
-
-  // Helper to get article owner ID
-  const getArticleOwnerId = useCallback(() => {
-    if (!displayArticle) return null;
-    
-    const user = displayArticle.user || displayArticle.author || displayArticle.postedBy || displayArticle.userId;
-    if (!user) return null;
-    
-    if (typeof user === 'string') return user;
-    return user._id || user.id || user.userId || null;
-  }, [displayArticle]);
-
-  // Handle like functionality with notifications
-  const handleLikeToggle = useCallback(async () => {
-    if (!currentUser?._id) {
-      alert('Please login to like articles');
-      navigate('/login');
-      return;
-    }
-
-    if (!articleId || !displayArticle) return;
-
-    const prev = { ...localLikeState };
-    const newLiked = !prev.hasLiked;
-    const newCount = Math.max(0, prev.count + (newLiked ? 1 : -1));
-
-    // Get article owner ID
-    const articleOwnerId = getArticleOwnerId();
-    const isOwnArticle = articleOwnerId === currentUser._id;
-
-    // Optimistic update (local)
-    setLocalLikeState({
-      hasLiked: newLiked,
-      count: newCount,
-      isUpdating: true
-    });
-
-    try {
-      // Normalize current likes to array of userIds for optimistic reducer
-      const currentLikesRaw = (displayArticle && displayArticle.likes) ? displayArticle.likes : [];
-      const currentLikes = Array.isArray(currentLikesRaw)
-        ? currentLikesRaw.map(l => (typeof l === 'string' ? l : (l.userId || l._id || l.id || l)))
-        : [];
-
-      // Determine whether we currently (according to redux or article) think user has liked
-      const currentlyLiked = (likeState && typeof likeState.isLikedByUser !== 'undefined')
-        ? Boolean(likeState.isLikedByUser)
-        : (displayArticle && Array.isArray(displayArticle.likes) && displayArticle.likes.some(l => (typeof l === 'string' ? l === currentUser._id : (l.userId === currentUser._id || l._id === currentUser._id || l.id === currentUser._id))));
-
-      dispatch(optimisticToggleLike({ 
-        articleId, 
-        userId: currentUser._id,
-        currentLikes 
-      }));
-
-      const res = await dispatch(toggleLike({ 
-        articleId, 
-        userId: currentUser._id,
-        wasLikedBefore: currentlyLiked,
-        articleOwnerId: articleOwnerId,
-        articleTitle: displayArticle.title || 'Your article',
-        currentUserName: currentUser.username || currentUser.name || 'Someone'
-      }));
-      
-      if (res.type && !res.type.endsWith('/fulfilled')) {
-        // revert
-        setLocalLikeState({ hasLiked: prev.hasLiked, count: prev.count, isUpdating: false });
-      }
-    } catch (error) {
-      console.error('Error toggling like:', error);
-      // Revert on error
-      setLocalLikeState({
-        hasLiked: prev.hasLiked,
-        count: prev.count,
-        isUpdating: false
-      });
-      alert('An error occurred. Please try again.');
-    }
-  }, [articleId, currentUser, localLikeState, displayArticle, dispatch, navigate, getArticleOwnerId, likeState]);
 
   // Memoized author data (use cached/fetched article)
   const author = useMemo(() => {
@@ -287,6 +149,84 @@ const IndArticle = () => {
   const handleCommentChange = useCallback((e) => {
     setCommentInput(e.target.value);
   }, []);
+
+  // Handle like/unlike for this article with optimistic UI
+  const handleLikeClick = useCallback(async (e) => {
+    e.stopPropagation();
+    if (!currentUser?._id || !articleId || !displayArticle) return;
+
+    const likedBy = displayArticle.likedBy || displayArticle.likes || [];
+    const currentId = String(currentUser._id);
+    const hasLiked = likedBy.some(x => {
+      const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+      return String(id) === currentId;
+    });
+
+    // Optimistic update: toggle like state
+    const newLikedBy = hasLiked
+      ? likedBy.filter(x => {
+          const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+          return String(id) !== currentId;
+        })
+      : [...likedBy, currentUser._id];
+
+    dispatch(updateArticleLikes({
+      articleId,
+      likes: newLikedBy,
+      likesCount: newLikedBy.length,
+    }));
+
+    dispatch(optimisticToggleLike({ articleId }));
+
+    try {
+      const result = await dispatch(toggleLike({
+        articleId,
+        userId: currentUser._id,
+      })).unwrap();
+
+      // Update with backend response article
+      dispatch(updateArticleLikes({
+        articleId,
+        article: result.article,
+      }));
+    } catch (error) {
+      console.error('Like update failed:', error);
+      // Rollback to original state
+      dispatch(updateArticleLikes({
+        articleId,
+        likes: likedBy,
+        likesCount: likedBy.length,
+      }));
+    }
+  }, [dispatch, currentUser, articleId, displayArticle]);
+
+  // Resolve article owner id from various possible shapes
+  const getArticleOwnerId = useCallback(() => {
+    const article = displayArticle;
+    if (!article) return null;
+
+    // Prefer user-like objects on the article
+    let userObj = null;
+    if (article.user && typeof article.user === 'object') userObj = article.user;
+    else if (article.author && typeof article.author === 'object') userObj = article.author;
+    else if (article.postedBy && typeof article.postedBy === 'object') userObj = article.postedBy;
+    else if (article.userId && typeof article.userId === 'object') userObj = article.userId;
+
+    if (userObj) {
+      return userObj._id || userObj.id || userObj.userId || null;
+    }
+
+    // Fallback to string/primitive ids if userObj not present
+    const primitiveId =
+      (typeof article.user === 'string' ? article.user : null) ||
+      (typeof article.author === 'string' ? article.author : null) ||
+      (typeof article.postedBy === 'string' ? article.postedBy : null) ||
+      (article.userId && typeof article.userId !== 'object' ? article.userId : null) ||
+      article.authorId || article.ownerId || (article.createdBy && (article.createdBy.id || article.createdBy)) ||
+      null;
+
+    return primitiveId;
+  }, [displayArticle]);
 
   // Comments from comments slice (paginated)
   const comments = useSelector((state) => selectCommentsForArticle(state, articleId));
@@ -511,34 +451,31 @@ const IndArticle = () => {
               </p>
             </div>
           </div>
-
-          {/** Prefer authoritative likeState from Redux if present, fall back to local optimistic state */}
-          {(() => {
-            const displayedHasLiked = likeState?.isLikedByUser ?? localLikeState.hasLiked;
-            const displayedCount = (likeState && typeof likeState.count === 'number') ? likeState.count : localLikeState.count;
-            const displayedIsUpdating = Boolean(isLiking) || Boolean(localLikeState.isUpdating);
-
-            return (
-              <button
-                onClick={handleLikeToggle}
-                disabled={!currentUser?._id || displayedIsUpdating}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 ${
-                  displayedHasLiked 
-                    ? 'text-red-500 hover:text-red-600 bg-red-50' 
-                    : 'text-gray-600 hover:text-red-500 bg-gray-100'
-                } ${displayedIsUpdating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-              >
-                {displayedIsUpdating ? (
-                  <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <i className={`fa${displayedHasLiked ? '-solid' : '-regular'} fa-heart`}></i>
-                )}
-                <span className={`font-medium ${displayedHasLiked ? 'text-red-500' : 'text-gray-700'}`}>
-                  {displayedCount}
-                </span>
-              </button>
-            );
-          })()}
+          {/* Engagement: Like */}
+          <div className="flex items-center space-x-3 text-gray-600">
+            {(() => {
+              const likedBy = displayArticle?.likedBy || displayArticle?.likes || [];
+              const currentId = String(currentUser?._id || '');
+              const hasLiked = likedBy.some(x => {
+                const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+                return String(id) === currentId;
+              });
+              const likeCount = (displayArticle?.likeCount ?? displayArticle?.likesCount ?? likedBy.length ?? 0);
+              return (
+                <button
+                  onClick={handleLikeClick}
+                  disabled={isLiking}
+                  className={`like-button flex items-center gap-2 transition-all duration-200 ${
+                    hasLiked ? 'text-red-500' : 'text-gray-600'
+                  } hover:text-red-500 cursor-pointer ${hasLiked ? 'animate-heart-like' : ''}`}
+                  style={{ opacity: isLiking ? 0.6 : 1 }}
+                >
+                  <i className={`fa${hasLiked ? '-solid' : '-regular'} fa-heart text-xl`}></i>
+                  <span className="font-medium">{likeCount}</span>
+                </button>
+              );
+            })()}
+          </div>
         </div>
 
         <article className="prose prose-lg max-w-none text-gray-700 mb-12">
@@ -546,125 +483,6 @@ const IndArticle = () => {
             {displayArticle?.content}
           </div>
         </article>
-
-        {/* <div className="bg-white rounded-xl shadow-lg p-6 mb-12">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-800">
-              Comments ({commentsMeta?.total || displayArticle?.comments?.length || 0})
-            </h2>
-            <div className="flex items-center gap-4">
-              <button
-                onClick={toggleComments}
-                className="text-blue-500 hover:text-blue-600 transition-colors"
-              >
-                {showComments ? 'Hide' : 'Show'} Comments
-              </button>
-            </div>
-          </div>
-
-          {showComments && (
-            <>
-              {currentUser?._id && (
-                <form onSubmit={handleSubmitComment} className="mb-6">
-                  <div className="flex gap-4">
-                    <div className="flex-shrink-0">
-                      <img 
-                        src={getImageSrc(currentUser.profilePhotoUrl || currentUser.profilePhoto)} 
-                        alt={currentUser.username}
-                        className="w-10 h-10 rounded-full object-cover"
-                        onError={(e) => e.target.src = defaultImage}
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <textarea
-                        value={commentInput}
-                        onChange={handleCommentChange}
-                        placeholder="Add a comment..."
-                        className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                        rows="3"
-                        disabled={commentsMeta.loading}
-                      />
-                      <div className="flex justify-between items-center mt-2">
-                        <p className="text-sm text-gray-500">
-                          {commentsMeta.error && <span className="text-red-500">{String(commentsMeta.error)}</span>}
-                        </p>
-                        <button
-                          type="submit"
-                          disabled={commentsMeta.loading || !commentInput.trim()}
-                          className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                        >
-                          {commentsMeta.loading ? (
-                            <span className="flex items-center gap-2">
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              Posting...
-                            </span>
-                          ) : (
-                            'Post Comment'
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              )}
-
-              <div className="space-y-6">
-                {commentsMeta.loading && (comments.length === 0) ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <div className="animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-transparent mx-auto mb-3"></div>
-                    Loading comments...
-                  </div>
-                ) : (
-                  comments.length > 0 ? (
-                    comments.map((comment) => {
-                      const commentUser = comment.user || comment.author || comment.commentedBy || {};
-                      const commentUserPhoto = getImageSrc(commentUser.profilePhotoUrl || commentUser.profilePhoto || commentUser.avatar || commentUser.image);
-                      const commentUserName = commentUser.username || commentUser.name || commentUser.fullName || commentUser.displayName || commentUser.email || 'User';
-
-                      return (
-                        <div key={comment._id || comment.id} className="flex gap-4 p-4 bg-gray-50 rounded-lg">
-                          <div className="flex-shrink-0">
-                            <img 
-                              src={commentUserPhoto} 
-                              alt={commentUserName}
-                              className="w-10 h-10 rounded-full object-cover"
-                              onError={(e) => e.target.src = defaultImage}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="font-semibold text-gray-800">{commentUserName}</span>
-                              <span className="text-gray-500 text-sm">{formatTime(comment.createdAt || comment.created_at || comment.date)}</span>
-                            </div>
-                            <p className="text-gray-700">{comment.content || comment.text}</p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <i className="fa-regular fa-comment-dots text-3xl mb-3 opacity-50"></i>
-                      <p>No comments yet. Be the first to comment!</p>
-                    </div>
-                  )
-                )}
-              </div>
-
-              {comments.length < (commentsMeta.total || 0) && (
-                <div className="text-center mt-6">
-                  <button
-                    onClick={handleReadMore}
-                    disabled={commentsMeta.loading}
-                    className="px-6 py-2 bg-white border border-gray-200 rounded-lg hover:shadow-sm"
-                  >
-                    {commentsMeta.loading ? 'Loading...' : 'Read more'}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div> */}
-
       </div>
     </main>
   );

@@ -1,5 +1,52 @@
 @import "tailwindcss";
 
+/* ❤️ Like Button Animation */
+@keyframes likeHeartBounce {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes heartLike {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.like-button {
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.like-button:hover {
+  transform: scale(1.1);
+}
+
+.like-button.liked {
+  animation: likeHeartBounce 0.4s ease;
+  color: #ef4444; /* red-500 */
+}
+
+.like-button.unliked {
+  color: #9ca3af; /* gray-400 */
+}
+
+.animate-heart-like {
+  animation: heartLike 0.4s ease-in-out;
+}
+
 #photo{
     /* border: 2px solid red; */
     display: flex;

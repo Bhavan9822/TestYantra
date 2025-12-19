@@ -113,11 +113,31 @@ const notificationSlice = createSlice({
         type: action.payload.type,
         fromUserId: action.payload.fromUserId,
         fromUsername: action.payload.fromUsername,
+        articleId: action.payload.articleId,
         profilePhoto: action.payload.profilePhoto || null,
         message: action.payload.message,
         createdAt: action.payload.createdAt,
         isRead: action.payload.isRead ?? false,
       };
+
+      const duplicate = state.notifications.find(
+        (item) =>
+          item.type === n.type &&
+          item.fromUserId === n.fromUserId &&
+          item.articleId === n.articleId &&
+          item.message === n.message
+      );
+
+      if (duplicate) {
+        console.log('ℹ️ Skipping duplicate notification', duplicate);
+        return;
+      }
+
+      if (n.type === 'ARTICLE_LIKED') {
+        console.log('[NOTIFICATION] added for owner', n);
+      } else {
+        console.log('🔔 Adding notification', n);
+      }
 
       state.notifications.unshift(n);
       if (!n.isRead) state.unreadCount += 1;

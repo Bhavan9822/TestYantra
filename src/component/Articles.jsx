@@ -2,14 +2,98 @@
 import React, { useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
-import { fetchPosts, fetchPostById } from '../ArticlesSlice'
-import { selectArticleLikes, optimisticToggleLike, toggleLike } from '../LikeSlice'
+import { fetchPosts, fetchPostById, updateArticleLikes } from '../ArticlesSlice'
+import { toggleLike, optimisticToggleLike, selectIsLiking } from '../LikeSlice'
 import { useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import { formatTime } from '../FormatTime'
 import NotificationBell from './NotificationBell'
 import { sendFollowRequest } from '../SearchSlice';
-import { toast } from 'react-toastify';
+
+// ArticleCard component to properly use hooks
+const ArticleCard = ({ post, postId, userDisplayName, userProfilePhoto, userInitials, userPhoto, defaultImage, currentUser, handleLikeClick, setSelectedPostId }) => {
+  // Derive isLiked from article.likedBy instead of manually toggling
+  const likedBy = post.likedBy || post.likes || [];
+  const currentId = String(currentUser?._id || '');
+  const hasLiked = likedBy.some(x => {
+    const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+    return String(id) === currentId;
+  });
+  const likeCount = post.likeCount ?? post.likesCount ?? likedBy.length ?? 0;
+  const isLiking = useSelector((state) => selectIsLiking(state, postId));
+
+  return (
+    <div 
+      className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer border border-gray-200"
+      onClick={() => setSelectedPostId(postId)}
+    >
+      {/* Article Header with Gradient */}
+      <div className="h-48 bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 relative overflow-hidden">
+        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/20 transition-colors"></div>
+        <div className="absolute bottom-4 left-6 right-6">
+          <h2 className="text-xl font-bold text-white line-clamp-2 drop-shadow-lg">
+            {post.title || 'Untitled Article'}
+          </h2>
+        </div>
+      </div>
+
+      {/* Article Content */}
+      <div className="p-6">
+        <p className="text-gray-700 leading-relaxed mb-4 line-clamp-3 min-h-[72px]">
+          {post.content || 'No content available'}
+        </p>
+
+        {/* Author Info */}
+        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+          <div className="flex items-center space-x-3">
+            <div className="relative">
+              <img 
+                src={`${userProfilePhoto}` || `${userPhoto}` || `${defaultImage}`}
+                alt={userDisplayName}
+                className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
+                onError={(e) => { e.target.onerror = null; e.target.src = userPhoto || defaultImage; }}
+              />
+              <div 
+                className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-medium text-xs border-2 border-white shadow-sm"
+                style={{ display: 'none' }}
+              >
+                {userInitials}
+              </div>
+            </div>
+            <div>
+              <p className="font-semibold text-gray-800 text-sm">{userDisplayName}</p>
+              <p className="text-gray-500 text-xs">
+                {post.createdAt ? formatTime(post.createdAt) : 'Recently'}
+              </p>
+            </div>
+          </div>
+          
+          {/* Engagement Stats */}
+          <div className="flex items-center space-x-3 text-gray-500">
+            <button
+              onClick={(e) => handleLikeClick(e, post)}
+              disabled={isLiking}
+              className={`like-button flex items-center gap-1 text-sm transition-all duration-200 ${
+                hasLiked ? 'text-red-500' : 'text-gray-500'
+              } hover:text-red-500 cursor-pointer ${hasLiked ? 'animate-heart-like' : ''}`}
+              style={{ opacity: isLiking ? 0.6 : 1 }}
+            >
+              <i className={`fa${hasLiked ? '-solid' : '-regular'} fa-heart`}></i>
+              <span>{likeCount}</span>
+            </button>
+            <div className="flex items-center space-x-1 text-sm">
+              <i className="far fa-comment text-gray-500"></i>
+              <span className="text-gray-600">{post.comments?.length || 0}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Hover Effect */}
+      <div className="h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+    </div>
+  );
+};
 
 const Articles = () => {
   let navigate = useNavigate();
@@ -321,55 +405,63 @@ const Articles = () => {
     [topPost, myPosts]
   );
 
-  // Select the raw articleLikes map from Redux (stable reference when unchanged)
-  const articleLikesMap = useSelector((state) => state.likes?.articleLikes || {});
-  const likeOperations = useSelector((state) => state.likes?.likeOperations || {});
-
-  // Build likeStates for the combined posts using memoization so we don't
-  // create a new object on every render and cause extra re-renders.
-  const likeStates = useMemo(() => {
-    const map = {};
-    combinedPosts.forEach(p => {
-      const id = p._id || p.id;
-      map[id] = articleLikesMap[id] || { likes: [], count: p.likes?.length || 0, isLikedByUser: false };
-    });
-    return map;
-  }, [combinedPosts, articleLikesMap]);
-
-  // Handler to toggle like for an article from the Articles list
-  const handleToggleLike = useCallback(async (e, post) => {
+  // Handle like/unlike for articles
+  const handleLikeClick = useCallback(async (e, post) => {
     e.stopPropagation();
+    
     if (!currentUser?._id) {
+      toast.error('Please login to like articles');
       navigate('/login');
       return;
     }
 
-    const postId = post._id || post.id;
-    const articleOwnerId = getArticleOwnerId(post);
-    const isOwnArticle = articleOwnerId === currentUser._id;
-    const currentLikes = articleLikesMap[postId]?.likes || post.likes || [];
-    const currentlyLiked = (articleLikesMap[postId]?.isLikedByUser) || 
-      (Array.isArray(currentLikes) && currentLikes.some(l => 
-        (typeof l === 'string' ? l === currentUser._id : 
-        (l.userId === currentUser._id || l._id === currentUser._id || l.id === currentUser._id))
-      ));
-
-    // Optimistic update in the likes slice
-    dispatch(optimisticToggleLike({ articleId: postId, userId: currentUser._id, currentLikes }));
+    const articleId = post._id || post.id;
+    const likedBy = post.likedBy || post.likes || [];
+    const currentId = String(currentUser._id);
+    const hasLiked = likedBy.some(x => {
+      const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+      return String(id) === currentId;
+    });
+    
+    // OPTIMISTIC UPDATE: toggle like state
+    const newLikedBy = hasLiked
+      ? likedBy.filter(x => {
+          const id = typeof x === 'object' ? (x._id || x.id || x.userId) : x;
+          return String(id) !== currentId;
+        })
+      : [...likedBy, currentUser._id];
+    
+    dispatch(updateArticleLikes({
+      articleId,
+      likes: newLikedBy,
+      likesCount: newLikedBy.length,
+    }));
+    
+    dispatch(optimisticToggleLike({ articleId }));
 
     try {
-      await dispatch(toggleLike({ 
-        articleId: postId, 
+      const result = await dispatch(toggleLike({
+        articleId,
         userId: currentUser._id,
-        wasLikedBefore: currentlyLiked,
-        articleOwnerId: articleOwnerId,
-        articleTitle: post.title || 'Your article',
-        currentUserName: currentUser.username || currentUser.name || 'Someone'
+      })).unwrap();
+      
+      // Update with backend response article
+      dispatch(updateArticleLikes({
+        articleId,
+        article: result.article,
       }));
-    } catch (err) {
-      console.error('Articles: like/unlike error', err);
+    } catch (error) {
+      console.error('❌ Like failed:', error);
+      // Rollback to original state
+      dispatch(updateArticleLikes({
+        articleId,
+        likes: likedBy,
+        likesCount: likedBy.length,
+      }));
     }
-  }, [dispatch, navigate, currentUser, articleLikesMap, getArticleOwnerId]);
+  }, [dispatch, currentUser, navigate]);
+
+
 
   // Debug: Log the first post to see its structure
   useEffect(() => {
@@ -480,86 +572,21 @@ const Articles = () => {
               const userProfilePhoto = getUserProfilePhoto(post);
               const userInitials = userDisplayName.slice(0, 2).toUpperCase();
               const postId = post._id || post.id;
-              const likeState = likeStates[postId] || {};
               
               return (
-                <div 
-                  key={postId} 
-                  className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group cursor-pointer border border-gray-200"
-                  onClick={() => setSelectedPostId(postId)}
-                >
-                  {/* Article Header with Gradient */}
-                  <div className="h-48 bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-black/10 group-hover:bg-black/20 transition-colors"></div>
-                    <div className="absolute bottom-4 left-6 right-6">
-                      <h2 className="text-xl font-bold text-white line-clamp-2 drop-shadow-lg">
-                        {post.title || 'Untitled Article'}
-                      </h2>
-                    </div>
-                  </div>
-
-                  {/* Article Content */}
-                  <div className="p-6">
-                    <p className="text-gray-700 leading-relaxed mb-4 line-clamp-3 min-h-[72px]">
-                      {post.content || 'No content available'}
-                    </p>
-
-                    {/* Author Info */}
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                      <div className="flex items-center space-x-3">
-                        <div className="relative">
-                          <img 
-                            src={`${userProfilePhoto}` || `${userPhoto}` || `${defaultImage}`}
-                            alt={userDisplayName}
-                            className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-sm"
-                            onError={(e) => { e.target.onerror = null; e.target.src = userPhoto || defaultImage; }}
-                          />
-                          <div 
-                            className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-medium text-xs border-2 border-white shadow-sm"
-                            style={{ display: 'none' }}
-                          >
-                            {userInitials}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-800 text-sm">{userDisplayName}</p>
-                          <p className="text-gray-500 text-xs">
-                            {post.createdAt ? formatTime(post.createdAt) : 'Recently'}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      {/* Engagement Stats */}
-                      <div className="flex items-center space-x-3 text-gray-500">
-                        <div className="flex items-center space-x-1 text-sm">
-                          <button
-                            onClick={(e) => handleToggleLike(e, post)}
-                            disabled={!currentUser?._id || Boolean(likeOperations[postId])}
-                            className={`flex items-center gap-1 text-sm focus:outline-none transition-colors ${
-                              likeState.isLikedByUser ? 'text-red-500' : 'text-gray-500 hover:text-red-500'
-                            } ${likeOperations[postId] ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                          >
-                            {likeOperations[postId] ? (
-                              <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                            ) : (
-                              <i className={`fa${likeState.isLikedByUser ? '-solid' : '-regular'} fa-heart`}></i>
-                            )}
-                          </button>
-                          <span className={likeState.isLikedByUser ? 'text-red-500 font-medium' : 'text-gray-600'}>
-                            {likeState.count || post.likes?.length || 0}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-1 text-sm">
-                          <i className="far fa-comment text-gray-500"></i>
-                          <span className="text-gray-600">{post.comments?.length || 0}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Hover Effect */}
-                  <div className="h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                </div>
+                <ArticleCard
+                  key={postId}
+                  post={post}
+                  postId={postId}
+                  userDisplayName={userDisplayName}
+                  userProfilePhoto={userProfilePhoto}
+                  userInitials={userInitials}
+                  userPhoto={userPhoto}
+                  defaultImage={defaultImage}
+                  currentUser={currentUser}
+                  handleLikeClick={handleLikeClick}
+                  setSelectedPostId={setSelectedPostId}
+                />
               );
             })}
           </div>
