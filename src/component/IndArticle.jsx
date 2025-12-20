@@ -3,14 +3,65 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchArticleById, selectPostById, updatePostOptimistically, updateArticleLikes } from '../ArticlesSlice';
 import { toggleLike, optimisticToggleLike, selectIsLiking } from '../LikeSlice';
-import { postComment, selectCommentsForArticle, selectCommentsMeta } from '../CommentSlice';
+
 import NotificationBell from './NotificationBell';
 import { formatTime } from '../FormatTime';
+import { sendFollowRequest } from '../SearchSlice';
+import { toast } from 'react-toastify';
+
+
 
 const IndArticle = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { articleId } = useParams();
+  const searchRef = useRef(null);
+  
+
+  const [inp,setinp]=useState("")
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const handelFollow=(e)=>{
+      setinp(e.target.value);
+    }
+    const handelfollowsubmit = async (e) => {
+      e.preventDefault();
+      const username = inp.trim();
+      
+      if (!username) {
+        toast.error('Please enter a username');
+        return;
+      }
+  
+      try {
+        const result = await dispatch(sendFollowRequest({ targetUsername: username })).unwrap();
+        
+        if (result.success || result.message === 'Follow request sent successfully') {
+          toast.success(`Follow request sent to ${username}`);
+        } else if (result.message?.includes('already following') || result.error?.includes('already following')) {
+          toast.info(`You are already following ${username}`);
+        } else if (result.message?.includes('pending') || result.error?.includes('pending')) {
+          toast.info(`Follow request already sent to ${username}`);
+        } else {
+          toast.success('Follow request sent successfully');
+        }
+      } catch (error) {
+        console.error('Follow request failed:', error);
+        
+        if (error?.includes?.('not found') || error?.includes?.('does not exist')) {
+          toast.error(`User "${username}" not found`);
+        } else if (error?.includes?.('already following')) {
+          toast.info(`You are already following ${username}`);
+        } else if (error?.includes?.('pending')) {
+          toast.info(`Follow request already pending for ${username}`);
+        } else if (error?.includes?.('yourself')) {
+          toast.error("You can't follow yourself");
+        } else {
+          toast.error(error || 'Failed to send follow request');
+        }
+      } finally {
+        setinp('');
+      }
+    }
   
   // Get data from Redux store - use stable selectors
   const currentUser = useSelector((state) => state.auth.currentUser);
@@ -37,12 +88,10 @@ const IndArticle = () => {
   const displayArticle = displayArticleCandidate || cachedArticleRef.current;
   
   // Local state
-  const [commentInput, setCommentInput] = useState('');
-  const [showComments, setShowComments] = useState(true);
   const isLiking = useSelector((state) => selectIsLiking(state, articleId));
 
   // Static values
-  const defaultImage = useMemo(() => "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSnnA_0pG5u9vFP1v9a2DKaqVMCEL_0-FXjkduD2ZzgSm14wJy-tcGygo_HZX_2bzMHF8I&usqp=CAU", []);
+  const defaultImage = useMemo(() => "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E", []);
 
   // Memoized helper functions
   const getImageSrc = useCallback((photo) => {
@@ -140,15 +189,9 @@ const IndArticle = () => {
     }
   }, []);
 
-  // Toggle comments visibility
-  const toggleComments = useCallback(() => {
-    setShowComments(prev => !prev);
-  }, []);
 
-  // Handle comment input change
-  const handleCommentChange = useCallback((e) => {
-    setCommentInput(e.target.value);
-  }, []);
+
+
 
   // Handle like/unlike for this article with optimistic UI
   const handleLikeClick = useCallback(async (e) => {
@@ -228,57 +271,13 @@ const IndArticle = () => {
     return primitiveId;
   }, [displayArticle]);
 
-  // Comments from comments slice (paginated)
-  const comments = useSelector((state) => selectCommentsForArticle(state, articleId));
-  const commentsMeta = useSelector((state) => selectCommentsMeta(state, articleId));
 
-  // Load first page of comments when comments panel is opened or article changes
-  // Note: Removed fetchComments as there's no backend GET endpoint
-  // Comments will be loaded from the article data itself
-  useEffect(() => {
-    if (!articleId) return;
-    // Comments are now fetched as part of the article data
-  }, [articleId, showComments, dispatch]);
 
-  const handleReadMore = useCallback(() => {
-    // Note: Removed pagination as there's no backend GET endpoint for comments
-    // All comments are now loaded with the article data
-    console.log('Load more comments - currently not supported without GET endpoint');
-  }, [articleId, commentsMeta, dispatch]);
 
-  // Handle comment submission with notifications
-  const handleSubmitComment = useCallback(async (e) => {
-    e.preventDefault();
-    if (!commentInput.trim() || !currentUser?._id || !articleId || !displayArticle) {
-      alert('Please enter a comment');
-      return;
-    }
 
-    // Get article owner ID
-    const articleOwnerId = getArticleOwnerId();
-    const isOwnArticle = articleOwnerId === currentUser._id;
 
-    try {
-      const result = await dispatch(postComment({ 
-        articleId, 
-        content: commentInput.trim(),
-        articleOwnerId: articleOwnerId,
-        articleTitle: displayArticle.title || 'Your article',
-        currentUserName: currentUser.username || currentUser.name || 'Someone'
-      }));
-      
-      if (result.type && result.type.endsWith('/fulfilled')) {
-        setCommentInput('');
-        // Refresh article data to get updated comments
-        dispatch(fetchArticleById(articleId));
-      } else {
-        alert('Failed to post comment. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error posting comment:', error);
-      alert('An error occurred. Please try again.');
-    }
-  }, [articleId, commentInput, currentUser, dispatch, commentsMeta.perPage, displayArticle, getArticleOwnerId]);
+
+
 
   // Loading state — show spinner only when nothing (not even cached) to render
   if (articleLoading && !displayArticle) {
@@ -353,9 +352,7 @@ const IndArticle = () => {
                   onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
                 />
               </div>
-              <div id='theme' className="border-2 border-black flex justify-center items-center h-[25px] w-[25px] rounded-full">
-                <i className="fa-regular fa-moon text-[16px] text-black"></i>
-              </div>
+             
             </div>
           </aside>
         </nav>
@@ -388,34 +385,101 @@ const IndArticle = () => {
 
   return (
     <main className="w-full overflow-scroll relative top-0 bg-gradient-to-b from-[rgb(151,222,246)] to-[rgb(210,137,228)] min-h-screen" id='main'>
-      <nav id='nav' className="fixed z-[1000] w-full h-[10vh] flex bg-white rounded-[5px] shadow-[rgba(0,0,0,0.45)_0px_25px_20px_-20px]">
-        <aside id='as1' className="flex-[30%]">
-          <h1 className="font-bold text-[35px] ml-[30px] mt-[12px] bg-gradient-to-r from-[rgb(0,98,255)] via-[rgb(128,0,119)] to-pink bg-clip-text text-transparent">SocialMedia</h1>
+      <nav id='nav' className="fixed z-[1000] w-full h-auto md:h-[10vh] md:flex items-center bg-white rounded-[5px] shadow-[rgba(0,0,0,0.45)_0px_25px_20px_-20px] px-3 md:px-0 gap-2 md:gap-0 grid grid-cols-[auto_1fr_auto] grid-rows-1 py-1">
+        <aside id='as1' className="col-span-1 row-start-1 col-start-1 min-w-0 md:flex-[30%] flex items-center">
+          <h1 className="font-bold text-[20px] md:text-[35px] ml-2 md:ml-[30px] mt-0 md:mt-[12px] leading-none tracking-tight bg-gradient-to-r from-[rgb(0,98,255)] via-[rgb(128,0,119)] to-pink bg-clip-text text-transparent truncate max-w-[160px] md:max-w-none">
+            SocialMedia
+          </h1>
         </aside>
-        <aside id='as2' className="flex-[30%] flex justify-center items-center">
-          <div id='searchbar'>
-            <input type="text" placeholder='Search...' className="border-2 border-black h-[40px] w-[30vw] rounded-[10px] pl-[15px] text-black" />
-          </div>
-          <i className="fa-solid fa-magnifying-glass relative top-[10px] right-[30px] h-[35px] w-[45px] rounded-tr-[10px] rounded-br-[10px] grid place-items-center text-black "></i>
+        
+        <aside id='as2' className="col-span-1 col-start-2 row-start-1 flex justify-center items-center relative px-2 md:mt-0 min-w-0 md:flex-[30%]" ref={searchRef}>
+          <form action="" onSubmit={handelfollowsubmit} className='flex items-center h-9 md:h-auto w-full max-w-[220px] md:w-auto md:max-w-none md:ml-[30px] mx-auto gap-1.5 md:gap-10 bg-gradient-to-r from-blue-50 to-purple-50 p-1 md:p-2 rounded-full border-2 border-gray-300 hover:border-blue-400 transition-colors'>
+            <input 
+              type="text" 
+              value={inp}
+              onChange={handelFollow} 
+              placeholder='Search users...' 
+              className='bg-transparent px-2 md:px-3 pl-3 md:pl-7 py-1 md:py-0 text-gray-700 text-sm placeholder-gray-400 focus:outline-none flex-1 min-w-0'
+            />
+            <button 
+              type='submit'
+              className='px-2 md:px-6 py-1 md:py-2 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium rounded-full hover:from-blue-600 hover:to-purple-600 transition-all duration-200 transform hover:scale-105 active:scale-95 flex items-center gap-1 md:gap-2 whitespace-nowrap'
+            >
+              <i className="fa-solid fa-magnifying-glass text-xs md:text-sm"></i>
+              <span className="hidden md:inline">Send</span>
+            </button>
+          </form>
         </aside>
-        <aside id='as3' className="flex-[40%] flex justify-end items-center gap-[30px]">
-          <div className="flex gap-[35px] pr-[45px] nav_div">
-            <div className='nav_icons'><i className="fa-regular fa-house text-[25px] text-black" onClick={()=>navigate("/home")}></i></div>
-            <div className='nav_icons'><i className="fa-regular fa-square-plus text-[25px] text-black" onClick={()=>navigate('/articles')}></i></div>
-            <NotificationBell />
-            <div className='nav_icons'>
-              <img
+        
+        <aside id='as3' className="col-span-1 row-start-1 col-start-3 flex justify-end items-center gap-3 md:gap-[30px] min-w-0 md:flex-[40%] relative">
+          {/* Menu toggle (mobile only) */}
+          <button
+            type="button"
+            aria-label="Open menu"
+            className="md:hidden p-2 rounded-md border border-gray-300 hover:bg-gray-100 active:bg-gray-200 transition"
+            onClick={() => setIsMenuOpen((v) => !v)}
+          >
+            <i className="fa-solid fa-bars text-[20px] text-black"></i>
+          </button>
+
+          {/* Desktop icons (visible on md+) */}
+          <div className="hidden md:flex gap-3 md:gap-[35px] pr-2 md:pr-[45px] nav_div items-center">
+            <div className='nav_icons cursor-pointer hidden md:block'>
+              <i className="fa-regular fa-house text-[20px] md:text-[25px] text-black" onClick={()=>navigate("/home")}></i>
+            </div>
+            <div className='nav_icons cursor-pointer hidden md:block'>
+              <i 
+                className="fa-regular fa-square-plus text-[20px] md:text-[25px] text-black" 
+                onClick={() => navigate("/articles")}
+              ></i>
+            </div>
+            <NotificationBell className="hidden md:block" />
+            <div className='nav_icons cursor-pointer hidden md:block'>
+              <img 
                 src={currentUserPhoto}
-                alt="User"
-                className="w-[25px] h-[25px] rounded-full object-cover border border-gray-400 cursor-pointer"
+                alt="User Profile" 
+                className="w-7 h-7 md:w-[30px] md:h-[30px] rounded-full object-cover border border-gray-400"
                 onClick={()=>navigate('/profile')}
                 onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
               />
             </div>
-            <div id='theme' className="border-2 border-black flex justify-center items-center h-[25px] w-[25px] rounded-full">
-              <i className="fa-regular fa-moon text-[16px] text-black"></i>
-            </div>
           </div>
+
+          {/* Dropdown menu (mobile only) */}
+          {isMenuOpen && (
+            <div className="md:hidden absolute right-2 top-full mt-2 bg-white rounded-lg shadow-lg p-2 flex flex-col gap-2 z-[1100] min-w-[180px]">
+              <button
+                className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left"
+                onClick={() => { setIsMenuOpen(false); navigate('/home'); }}
+              >
+                <i className="fa-regular fa-house text-[18px] text-black"></i>
+                <span className="text-sm">Home</span>
+              </button>
+              <button
+                className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left"
+                onClick={() => { setIsMenuOpen(false); navigate('/articles'); }}
+              >
+                <i className="fa-regular fa-square-plus text-[18px] text-black"></i>
+                <span className="text-sm">Blog</span>
+              </button>
+              <div className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100">
+                <NotificationBell iconClassName="text-[16px]" badgeClassName="w-4 h-4 text-[10px]" />
+                <span className="text-sm">Notifications</span>
+              </div>
+              <button
+                className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left"
+                onClick={() => { setIsMenuOpen(false); navigate('/profile'); }}
+              >
+                <img 
+                  src={currentUserPhoto}
+                  alt="Me"
+                  className="w-5 h-5 rounded-full object-cover border border-gray-300"
+                  onError={(e) => { e.target.onerror = null; e.target.src = defaultImage; }}
+                />
+                <span className="text-sm">Profile</span>
+              </button>
+            </div>
+          )}
         </aside>
       </nav>
 
