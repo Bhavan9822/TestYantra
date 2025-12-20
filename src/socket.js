@@ -22,7 +22,15 @@ function getSocket() {
 function registerUserIfNeeded() {
   if (!socket || !socket.connected) return;
 
-  const userId = store.getState()?.auth?.currentUser?._id;
+  let userId = store.getState()?.auth?.currentUser?._id;
+  // Safari can delay store hydration; fallback to localStorage
+  if (!userId) {
+    try {
+      const storedUser = localStorage.getItem("authUser");
+      if (storedUser) userId = JSON.parse(storedUser)?._id || null;
+    } catch {}
+  }
+
   if (!userId || registeredUserId === userId) return;
 
   socket.emit("register", userId);
@@ -36,7 +44,11 @@ function connectSocket() {
 
   socket = io(BACKEND_BASE, {
     path: SOCKET_PATH,
-    transports: ["websocket"],
+    // Safari can block pure websocket; allow polling fallback and retries
+    transports: ["websocket", "polling"],
+    reconnectionAttempts: 5,
+    reconnectionDelay: 500,
+    withCredentials: true,
     auth: { token: localStorage.getItem("authToken") },
   });
 
@@ -51,6 +63,12 @@ function connectSocket() {
 
   // ================= FOLLOW =================
   socket.on("followRequestReceived", (data) => {
+    const myUserId = store.getState()?.auth?.currentUser?._id;
+    if (myUserId && String(data.fromId) === String(myUserId)) {
+      console.log("[SOCKET] Skip followRequestReceived: self-notification", { myUserId, fromId: data.fromId });
+      return;
+    }
+
     store.dispatch(
       addNotification({
         type: "FOLLOW_REQUEST",
@@ -65,6 +83,11 @@ function connectSocket() {
 
   socket.on("followRequestAccepted", (data) => {
     const myUserId = store.getState()?.auth?.currentUser?._id;
+
+    if (myUserId && String(data.byId) === String(myUserId)) {
+      console.log("[SOCKET] Skip followRequestAccepted: self-notification", { myUserId, byId: data.byId });
+      return;
+    }
 
     store.dispatch(
       addNotification({
@@ -85,6 +108,12 @@ function connectSocket() {
   });
 
   socket.on("followRequestRejected", (data) => {
+    const myUserId = store.getState()?.auth?.currentUser?._id;
+    if (myUserId && String(data.byId) === String(myUserId)) {
+      console.log("[SOCKET] Skip followRequestRejected: self-notification", { myUserId, byId: data.byId });
+      return;
+    }
+
     store.dispatch(
       addNotification({
         type: "FOLLOW_REJECTED",
@@ -198,13 +227,19 @@ function connectSocket() {
     );
   });
 
-  // ================= 💬 NEW COMMENT =================
+  // =================  NEW COMMENT =================
   // Based on working friend's implementation - SIMPLIFIED and RELIABLE
   socket.on("newComment", (data) => {
     console.log("[SOCKET] newComment received", data);
 
     const state = store.getState();
-    const myUserId = state?.auth?.currentUser?._id;
+    let myUserId = state?.auth?.currentUser?._id;
+    if (!myUserId) {
+      try {
+        const storedUser = localStorage.getItem("authUser");
+        if (storedUser) myUserId = JSON.parse(storedUser)?._id || null;
+      } catch {}
+    }
 
     if (!myUserId) {
       console.log("[SOCKET] Skip newComment: no current user in Redux");
@@ -212,8 +247,21 @@ function connectSocket() {
     }
 
     // Extract from payload - TRUST it directly
-    const commenterName = data.comment?.by || data.comment?.from || "Someone";
-    const commenterId = data.comment?.by || data.comment?.from;
+    const commenterName =
+      data.comment?.by ||
+      data.comment?.from ||
+      data.comment?.user?.username ||
+      data.comment?.author?.username ||
+      data.comment?.postedBy?.username ||
+      "Someone";
+
+    // Support both object and string user IDs
+    const commenterId =
+      data.comment?.by ||
+      data.comment?.from ||
+      (typeof data.comment?.user === "object" ? data.comment?.user?._id : data.comment?.user) ||
+      data.comment?.author?._id ||
+      data.comment?.postedBy?._id;
     const commentText = data.comment?.text || data.comment?.content || "";
     const articleId = data.articleId;
 
@@ -228,7 +276,7 @@ function connectSocket() {
 
     // ========== SELF-NOTIFICATION GUARD ==========
     // Never show notification to the commenter themselves
-    if (commenterIdValue && String(myUserId) === String(commenterIdValue)) {
+    if (commenterIdValue && myUserId && String(myUserId) === String(commenterIdValue)) {
       console.log("[SOCKET] Skip newComment: self-notification prevented", { myUserId, commenterIdValue });
       return;
     }
@@ -283,8 +331,4 @@ function emit(event, payload) {
 }
 
 export { connectSocket, disconnectSocket, getSocket, on, off, emit };
-
-
-
-
 

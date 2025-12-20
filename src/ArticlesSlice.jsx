@@ -655,7 +655,7 @@ const articlesSlice = createSlice({
           if (!state.currentArticle.comments) {
             state.currentArticle.comments = [];
           }
-          state.currentArticle.comments.push(commentData);
+          state.currentArticle.comments.unshift(commentData);
         }
         
         // Also update in posts list
@@ -664,7 +664,7 @@ const articlesSlice = createSlice({
           if (!state.posts[postIndex].comments) {
             state.posts[postIndex].comments = [];
           }
-          state.posts[postIndex].comments.push(commentData);
+          state.posts[postIndex].comments.unshift(commentData);
         }
       })
       .addCase(createComment.rejected, (state, action) => {
