@@ -476,7 +476,7 @@ const articlesSlice = createSlice({
         if (!state.currentArticle.comments) {
           state.currentArticle.comments = [];
         }
-        state.currentArticle.comments.push(comment);
+        state.currentArticle.comments.unshift(comment);
       }
       // Also update in posts list if the article is there
       const postIndex = state.posts.findIndex(p => (p._id || p.id) === articleId);
@@ -484,7 +484,7 @@ const articlesSlice = createSlice({
         if (!state.posts[postIndex].comments) {
           state.posts[postIndex].comments = [];
         }
-        state.posts[postIndex].comments.push(comment);
+        state.posts[postIndex].comments.unshift(comment);
       }
     },
     removePost: (state, action) => {

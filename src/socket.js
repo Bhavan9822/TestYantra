@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import store from "./Store";
 import { addNotification } from "./NotificationSlice";
 import { incrementFollowers, incrementFollowing } from "./Slice";
-import { updateArticleLikes } from "./ArticlesSlice";
+import { updateArticleLikes, addCommentOptimistically } from "./ArticlesSlice";
 
 // ================= CONFIG =================
 const BACKEND_BASE = "https://robo-zv8u.onrender.com";
@@ -97,11 +97,11 @@ function connectSocket() {
     );
   });
 
-  // ================= ❤️ ARTICLE LIKED (FRIEND LOGIC) =================
+  // ================= ❤️ ARTICLE LIKED (OWNER-ONLY) =================
   socket.on("articleLiked", (data) => {
-    console.log("❤️ articleLiked", data);
+    console.log("[SOCKET] articleLiked event received", data);
 
-    // 🔁 Update likes count everywhere
+    // 🔁 Update likes count everywhere (if provided)
     if (data.article?._id) {
       store.dispatch(
         updateArticleLikes({
@@ -110,22 +110,146 @@ function connectSocket() {
           likesCount: data.article.likeCount ?? data.article.likedBy?.length,
         })
       );
+    } else if (data.articleId && (data.likes || data.likesCount !== undefined)) {
+      store.dispatch(
+        updateArticleLikes({
+          articleId: data.articleId,
+          likes: data.likes,
+          likesCount: data.likesCount || (data.likes?.length || 0),
+        })
+      );
     }
 
-    // 🔔 Notification (NO ownership checks)
+    const state = store.getState();
+    let myUserId = state?.auth?.currentUser?._id;
+    if (!myUserId) {
+      try {
+        const storedUser = localStorage.getItem("authUser");
+        if (storedUser) myUserId = JSON.parse(storedUser)?._id || null;
+      } catch {}
+    }
+    const articleId = data.articleId || data.article?._id;
+
+    const resolveOwnerIdFromStore = () => {
+      if (!articleId) return null;
+      const articlesState = state?.articles || {};
+      const list = articlesState.posts || [];
+      const currentArticle = articlesState.currentArticle;
+      const candidate = (list.find((a) => (a._id || a.id) === articleId)) || currentArticle;
+      if (!candidate) return null;
+      const userObj = candidate.user || candidate.author || candidate.postedBy || candidate.userId || null;
+      if (typeof userObj === "object") return userObj._id || userObj.id || userObj.userId || null;
+      if (typeof userObj === "string") return userObj;
+      return candidate.ownerId || candidate.authorId || null;
+    };
+
+    const ownerId = data.ownerId || resolveOwnerIdFromStore();
+    const fromUserId = data.fromUserId || data.likedBy?._id;
+    const isUnlike = data.liked === false || data.isLiked === false || data.message === 'Article unliked';
+
+    if (!myUserId || !ownerId) {
+      console.log("[SOCKET] Skip like notification: missing user/owner", { myUserId, ownerId });
+      return;
+    }
+    if (isUnlike) {
+      console.log("[SOCKET] Skip like notification: unlike event");
+      return;
+    }
+    if (String(myUserId) !== String(ownerId)) {
+      console.log("[SOCKET] Skip like notification: current user is not owner", { myUserId, ownerId });
+      return;
+    }
+    if (fromUserId && String(fromUserId) === String(myUserId)) {
+      console.log("[SOCKET] Skip like notification: liker is owner", { fromUserId, myUserId });
+      return;
+    }
+
+    // Duplicate guard
+    const existing = (state?.notifications?.notifications || []).find(
+      (n) =>
+        n.type === "ARTICLE_LIKED" &&
+        String(n.fromUserId) === String(fromUserId) &&
+        String(n.articleId) === String(articleId)
+    );
+    if (existing) {
+      console.log("[SOCKET] Skip like notification: duplicate detected");
+      return;
+    }
+
+    const fromUsername = data.fromUsername || data.likedBy?.username || data.likedBy || "Someone";
+    const message = `${fromUsername} liked your article`;
+
+    console.log("[NOTIFICATION] Article liked notification dispatched", {
+      articleId: data.articleId,
+      fromUserId,
+      fromUsername,
+    });
+
     store.dispatch(
       addNotification({
-        id: Date.now(),
         type: "ARTICLE_LIKED",
-        fromUserId: data.likedBy?._id || data.fromUserId,
-        fromUsername:
-          data.likedBy?.username ||
-          data.likedBy ||
-          "Someone",
-        articleId: data.articleId || data.article?._id,
-        message: `${
-          data.likedBy?.username || data.likedBy || "Someone"
-        } liked your article`,
+        fromUserId,
+        fromUsername,
+        articleId,
+        message,
+        createdAt: new Date().toISOString(),
+        isRead: false,
+      })
+    );
+  });
+
+  // ================= 💬 NEW COMMENT =================
+  // Based on working friend's implementation - SIMPLIFIED and RELIABLE
+  socket.on("newComment", (data) => {
+    console.log("[SOCKET] newComment received", data);
+
+    const state = store.getState();
+    const myUserId = state?.auth?.currentUser?._id;
+
+    if (!myUserId) {
+      console.log("[SOCKET] Skip newComment: no current user in Redux");
+      return;
+    }
+
+    // Extract from payload - TRUST it directly
+    const commenterName = data.comment?.by || data.comment?.from || "Someone";
+    const commenterId = data.comment?.by || data.comment?.from;
+    const commentText = data.comment?.text || data.comment?.content || "";
+    const articleId = data.articleId;
+
+    if (!articleId) {
+      console.log("[SOCKET] Skip newComment: missing articleId");
+      return;
+    }
+
+    // Extract ID value if commenter is an object
+    const commenterIdValue = typeof commenterId === "object" ? commenterId?._id : commenterId;
+    const commenterNameValue = typeof commenterName === "object" ? commenterName?.username || commenterName?.name : commenterName;
+
+    // ========== SELF-NOTIFICATION GUARD ==========
+    // Never show notification to the commenter themselves
+    if (commenterIdValue && String(myUserId) === String(commenterIdValue)) {
+      console.log("[SOCKET] Skip newComment: self-notification prevented", { myUserId, commenterIdValue });
+      return;
+    }
+
+    // ========== Add comment to top of article's comments ==========
+    // Unshift comment to the article in Redux so it appears immediately
+    store.dispatch(
+      addCommentOptimistically({
+        articleId,
+        comment: data.comment,
+      })
+    );
+
+    // ========== Dispatch notification ==========
+    store.dispatch(
+      addNotification({
+        type: "ARTICLE_COMMENTED",
+        fromUserId: commenterIdValue,
+        fromUsername: commenterNameValue,
+        articleId,
+        message: `${commenterNameValue} commented: "${commentText}"`,
         createdAt: new Date().toISOString(),
         isRead: false,
       })

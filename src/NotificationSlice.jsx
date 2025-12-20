@@ -120,21 +120,46 @@ const notificationSlice = createSlice({
         isRead: action.payload.isRead ?? false,
       };
 
-      const duplicate = state.notifications.find(
-        (item) =>
-          item.type === n.type &&
-          item.fromUserId === n.fromUserId &&
-          item.articleId === n.articleId &&
-          item.message === n.message
-      );
+      // Duplicate guard - more specific for each type
+      let isDuplicate = false;
+      
+      if (n.type === 'ARTICLE_LIKED') {
+        isDuplicate = state.notifications.some(
+          (item) =>
+            item.type === n.type &&
+            item.fromUserId === n.fromUserId &&
+            item.articleId === n.articleId &&
+            item.message === n.message
+        );
+      } else if (n.type === 'ARTICLE_COMMENTED') {
+        // For comments, check by type, fromUserId, articleId, and message
+        isDuplicate = state.notifications.some(
+          (item) =>
+            item.type === n.type &&
+            String(item.fromUserId) === String(n.fromUserId) &&
+            String(item.articleId) === String(n.articleId) &&
+            item.message === n.message
+        );
+      } else {
+        // Default duplicate check for other types
+        isDuplicate = state.notifications.some(
+          (item) =>
+            item.type === n.type &&
+            item.fromUserId === n.fromUserId &&
+            item.articleId === n.articleId &&
+            item.message === n.message
+        );
+      }
 
-      if (duplicate) {
-        console.log('ℹ️ Skipping duplicate notification', duplicate);
+      if (isDuplicate) {
+        console.log('ℹ️ Skipping duplicate notification', n);
         return;
       }
 
       if (n.type === 'ARTICLE_LIKED') {
-        console.log('[NOTIFICATION] added for owner', n);
+        console.log('[NOTIFICATION] ARTICLE_LIKED added', n);
+      } else if (n.type === 'ARTICLE_COMMENTED') {
+        console.log('[NOTIFICATION] ARTICLE_COMMENTED added', n);
       } else {
         console.log('🔔 Adding notification', n);
       }
