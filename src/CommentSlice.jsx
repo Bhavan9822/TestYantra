@@ -6,18 +6,7 @@ import { toast } from "react-toastify";
 // ================= CONFIG =================
 const API_BASE_URL = "https://robo-zv8u.onrender.com/api";
 
-// ================= ADD COMMENT =================
-/**
- * Post a comment to an article
- * 
- * Usage in component:
- * ```
- * dispatch(addComment({ articleId: "123", text: "Great post!" }))
- *   .unwrap()
- *   .then(() => toast.success("Comment posted"))
- *   .catch((error) => toast.error(error));
- * ```
- */
+
 export const addComment = createAsyncThunk(
   "comments/addComment",
   async ({ articleId, text }, { rejectWithValue }) => {
@@ -28,7 +17,7 @@ export const addComment = createAsyncThunk(
         return rejectWithValue("Authentication required");
       }
 
-      console.log("📝 Posting comment:", { articleId, text });
+      console.log("Posting comment:", { articleId, text });
 
       const response = await axios.post(
         `${API_BASE_URL}/articles/${articleId}/comment`,
@@ -42,14 +31,14 @@ export const addComment = createAsyncThunk(
         }
       );
 
-      console.log("✅ Comment posted successfully:", response.data);
+      console.log("Comment posted successfully:", response.data);
 
       return {
         articleId,
         comment: response.data.comment || response.data,
       };
     } catch (error) {
-      console.error("❌ Comment post failed:", error.response?.data || error.message);
+      console.error("Comment post failed:", error.response?.data || error.message);
       return rejectWithValue(
         error.response?.data?.message || error.message || "Failed to add comment"
       );
@@ -86,7 +75,7 @@ const commentSlice = createSlice({
         state.loading = false;
         state.loadingArticles[articleId] = false;
         // Toast shown by UI component after unwrap()
-        console.log("✅ Comment added to Redux state");
+        console.log("Comment added to Redux state");
       })
 
       .addCase(addComment.rejected, (state, action) => {
@@ -95,7 +84,7 @@ const commentSlice = createSlice({
         state.loadingArticles[articleId] = false;
         state.error = action.payload;
         // Error toast shown by UI component after catch()
-        console.error("❌ Comment failed:", action.payload);
+        console.error("Comment failed:", action.payload);
       });
   },
 });
@@ -121,3 +110,4 @@ export const selectCommentsMeta = (state, articleId) => ({
 });
 
 export default commentSlice.reducer;
+
