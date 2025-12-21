@@ -16,6 +16,7 @@ const Profile = () => {
 
   const followersCount = currentUser?.followers?.length || 0;
   const followingCount = currentUser?.following?.length || 0;
+  const [activeList, setActiveList] = useState(null); // 'followers' | 'following' | null
 
   const navigate = useNavigate();
   const unreadCount = useSelector(selectUnreadCount) || 0;
@@ -307,15 +308,73 @@ const Profile = () => {
             <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{myPosts.length}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Posts</p>
           </div>
-          <div className="bg-white dark:bg-purple-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center">
+          <div
+            className="bg-white dark:bg-purple-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center cursor-pointer select-none"
+            onClick={() => setActiveList(activeList === 'followers' ? null : 'followers')}
+            title="View followers"
+          >
             <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{followersCount}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Followers</p>
           </div>
-          <div className="bg-white dark:bg-pink-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center">
+          <div
+            className="bg-white dark:bg-pink-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center cursor-pointer select-none"
+            onClick={() => setActiveList(activeList === 'following' ? null : 'following')}
+            title="View following"
+          >
             <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{followingCount}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Following</p>
           </div>
         </div>
+
+        {/* Followers / Following List */}
+        {activeList && (
+          <div className="w-full max-w-5xl mt-8 px-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-semibold text-gray-800 dark:text-white capitalize">{activeList}</h3>
+              <button
+                className="text-sm px-3 py-1 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onClick={() => setActiveList(null)}
+              >
+                Close
+              </button>
+            </div>
+            {(
+              activeList === 'followers' ? (currentUser?.followers || []) : (currentUser?.following || [])
+            ).length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-300">No users</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {(
+                  activeList === 'followers' ? (currentUser?.followers || []) : (currentUser?.following || [])
+                ).map((u, idx) => {
+                  const id = u?._id || u?.id || idx;
+                  const name = u?.username || u?.name || u?.email || 'User';
+                  const username = u?.username || (u?.email ? u.email.split('@')[0] : 'user');
+                  const emailVal = u?.email || u?.mail || u?.contactEmail || '';
+                  const photo = getImageSrc(u?.profilePhoto || u?.avatar || u?.photoURL || u?.image);
+                  return (
+                    <div
+                      key={`${activeList}-${id}`}
+                      className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 flex flex-col items-center text-center hover:shadow-md transition"
+                    >
+                      <img
+                        src={photo}
+                        alt="profile"
+                        className="w-16 h-16 rounded-full mb-3 object-cover"
+                        onError={(e) => { e.target.onerror = null; e.target.src = getImageSrc(null); }}
+                      />
+                      <div className="font-semibold text-gray-800 dark:text-white">{name}</div>
+                      <div className="text-xs text-gray-500">@{username}</div>
+                      {emailVal && (
+                        <div className="text-xs text-gray-500 mt-1">{emailVal}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Logout Button */}
         <div id='logout' className="w-full max-w-[260px] mx-auto flex justify-center mt-1 mr-[-100px]">

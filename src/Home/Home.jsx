@@ -552,7 +552,7 @@ const Home = () => {
           console.log('Received followRequestReceived via socket:', payload);
           
           // Update Redux state
-          dispatch(followRequestReceivedAction(payload));
+          dispatch(followRequestReceived(payload));
           
           // Show toast notification
           toast.info(`New follow request from ${payload.sender?.username || 'someone'}`);
