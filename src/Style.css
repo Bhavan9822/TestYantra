@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ❤️ Like Button Animation */
+/*  Like Button Animation */
 @keyframes likeHeartBounce {
   0% {
     transform: scale(1);
@@ -60,21 +60,16 @@
     bottom: 25px;
 }
 #bg{
-
-    /* background-image: url(./Assets/bg5.jpg); */
-    /* background-image: linear-gradient(#EEAECA,#94BBE9); */
     background-image: linear-gradient(rgb(151, 222, 246), rgb(210, 137, 228));
     background-repeat: no-repeat;
     background-size: cover;
 
 }
 #logbg{
-    /* border: 2px solid red; */
     background-image: url(./Assets/bg5.jpg);
     background-image: linear-gradient(rgb(151, 222, 246), rgb(210, 137, 228));
     background-repeat: no-repeat;
     background-size: cover;
-
 }
 
   /* React Cropper Styles */
@@ -377,9 +372,7 @@
 
 /* !!! */
  #middle_posts{
-  /* border: 2px solid red; */
   width: 100%;
-  /* padding-right: 20px; */
   padding-left: 5px;
   display: flex;
   flex-direction: column;
@@ -393,7 +386,6 @@
 }
 
 #suggetions{
-  /* border: 2px solid red; */
   margin-right: 35px;
   background-color: white;
   border-radius: 15px;
@@ -403,7 +395,6 @@
   padding-bottom: 30px;
 }
 #main_section{
-  /* border: 2px solid red; */
   width: 100%;
   height: 100%;
   position: relative;
@@ -412,7 +403,6 @@
 }
 
 #main{
-  /* border: 2px solid red; */
   width: 100%;
   height: 100vh;
 }
@@ -426,16 +416,12 @@
   font-size: 30px;
   font-weight: 550;
   width: 95%;
-  /* height: 23vh; */
   position: relative;
   top: 90px;
   left: 35px;
   display: flex;
-  /* background-color: white; */
-  /* box-shadow: rgba(100, 100, 111, 0.2) 0px 7px 29px 0px; */
 }
 #div1{
-  /* border: 2px solid red; */
   margin-top: 120px;
   margin-left: 45px;
   margin-right: 45px;
@@ -445,7 +431,6 @@
   padding-bottom: 20px;
 }
 .nav_div{
-  /* border: 2px solid rgb(255, 89, 0); */
   position:sticky;
   width: fixed;
   padding-left: 15px;
@@ -454,57 +439,24 @@
   justify-content: center;
   align-items: center;
 
-}
-/* .nav_icons:hover{
-  border-radius: 50%;
-  cursor: pointer;
-  height: 43px;
-  width: 43px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-image: radial-gradient(skyblue,rgb(131, 25, 131));
-  color: white;
-  transition: all 0s ease-in;
-}
-.nav_icons>i:hover{
-  color: white;
-  font-size: 25px;
-} */
- 
+} 
 #check{
-  /* border: 2px solid red; */
   margin-top: 78px;
 }
 #chat_area{
-  /* border: 2px solid red; */
   margin-top: 78px;
 }
 
 #cimg{
-  /* border: 2px solid red; */
-  /* height: 100px;
-  width: 100px; */
   border-radius: 50%;
-  /* margin-right: 5px; */
-
-
 }
 #cimg>img{
-  /* border: 2px solid green; */
   border-radius: 50%;
-
-}
-#active{
-  /* border: 2px solid red; */
 }
 #cont{
-  /* border: 2px solid blue; */
   width: fit-content;
 }
-
 #logout{
-  /* border: 2px solid blue; */
   position: absolute;
   top: 80px;
   right: 50px;

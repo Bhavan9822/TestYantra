@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { fetchArticleById, selectPostById, updatePostOptimistically, updateArticleLikes } from '../ArticlesSlice';
+import { fetchArticleById, selectPostById, updateArticleLikes } from '../ArticlesSlice';
 import { toggleLike, optimisticToggleLike, selectIsLiking } from '../LikeSlice';
 
 import NotificationBell from './NotificationBell';
-import { formatTime } from '../FormatTime';
+// import { formatTime } from '../FormatTime';
 import { sendFollowRequest } from '../SearchSlice';
 import { toast } from 'react-toastify';
 
@@ -68,8 +68,8 @@ const IndArticle = () => {
   const currentArticle = useSelector((state) => state.articles.currentArticle);
   const articleLoading = useSelector((state) => state.articles.articleLoading);
   const articleError = useSelector((state) => state.articles.articleError);
-  const commentLoading = useSelector((state) => state.articles.commentLoading);
-  const commentError = useSelector((state) => state.articles.commentError);
+  // const commentLoading = useSelector((state) => state.articles.commentLoading);
+  // const commentError = useSelector((state) => state.articles.commentError);
   // Fallback: attempt to read the article from the posts list if currentArticle is not set
   const fallbackArticle = useSelector((state) => selectPostById(state, articleId));
   // Cache the last known article so that transient list refreshes or empty fetch
@@ -189,10 +189,6 @@ const IndArticle = () => {
     }
   }, []);
 
-
-
-
-
   // Handle like/unlike for this article with optimistic UI
   const handleLikeClick = useCallback(async (e) => {
     e.stopPropagation();
@@ -270,14 +266,6 @@ const IndArticle = () => {
 
     return primitiveId;
   }, [displayArticle]);
-
-
-
-
-
-
-
-
 
   // Loading state — show spinner only when nothing (not even cached) to render
   if (articleLoading && !displayArticle) {

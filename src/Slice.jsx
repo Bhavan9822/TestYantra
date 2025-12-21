@@ -44,7 +44,7 @@ const normalizeUser = (user) => {
     copy.profilePhotoUrl = null;
   }
 
-  // ✅ ENSURE ARRAYS EXIST (NO LOGIC CHANGE)
+  //  ENSURE ARRAYS EXIST (NO LOGIC CHANGE)
   copy.followers = Array.isArray(copy.followers) ? copy.followers : [];
   copy.following = Array.isArray(copy.following) ? copy.following : [];
 
@@ -192,10 +192,7 @@ const authSlice = createSlice({
         localStorage.removeItem("authToken");
       }
     },
-
-    // ===============================
-    // 🔥 ADDED: FOLLOW COUNTS ONLY
-    // ===============================
+    // ADDED: FOLLOW COUNTS ONLY
     incrementFollowers(state, action) {
       if (!state.currentUser) return;
       if (!Array.isArray(state.currentUser.followers)) {
@@ -214,9 +211,7 @@ const authSlice = createSlice({
       localStorage.setItem("authUser", JSON.stringify(state.currentUser));
     },
 
-    // ===============================
-    // 🔥 ADDED: UPDATE FOLLOWERS/FOLLOWING WITH USER DATA
-    // ===============================
+    //  ADDED: UPDATE FOLLOWERS/FOLLOWING WITH USER DATA
     // Adds user to followers or following array with full user data including username
     addToFollowers(state, action) {
       if (!state.currentUser) return;

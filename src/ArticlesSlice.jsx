@@ -38,11 +38,11 @@ export const fetchPosts = createAsyncThunk(
         count: response.data?.length || response.data?.articles?.length || 0
       });
       
-      // 🔍 DEBUG: Log first post to see structure
+      //  DEBUG: Log first post to see structure
       const articlesArray = response.data?.articles || response.data || [];
       if (articlesArray.length > 0) {
-        console.log('🔍 fetchPosts - First post structure:', articlesArray[0]);
-        console.log('🔍 fetchPosts - First post keys:', Object.keys(articlesArray[0]));
+        console.log('fetchPosts - First post structure:', articlesArray[0]);
+        console.log('fetchPosts - First post keys:', Object.keys(articlesArray[0]));
       }
       
       // Handle different response structures
@@ -255,149 +255,28 @@ export const createComment = createAsyncThunk(
   }
 );
 
-// Delete article
-export const deletePost = createAsyncThunk(
-  'articles/deletePost',
-  async (articleId, { rejectWithValue }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        log('error', 'No authentication token found');
-        return rejectWithValue('Authentication required');
-      }
 
-      log('info', 'Deleting article', { articleId });
-
-      const response = await axios.delete(`${API_BASE_URL}/articles/${articleId}`, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-      });
-
-      log('success', 'Article deleted successfully', { articleId });
-      
-      return { articleId, message: response.data?.message || 'Article deleted' };
-    } catch (error) {
-      log('error', 'Failed to delete article', {
-        status: error.response?.status,
-        message: error.response?.data?.message || error.message,
-        articleId
-      });
-
-      const status = error?.response?.status;
-      let serverMsg = error.response?.data?.message || 
-                     error.response?.data?.error || 
-                     error.message || 
-                     'Failed to delete post';
-
-      if (status === 401) {
-        log('warning', 'Authentication failed, clearing tokens');
-        try {
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('authUser');
-        } catch (e) {
-          log('error', 'Error clearing localStorage', e);
-        }
-        return rejectWithValue('Session expired. Please login again.');
-      }
-
-      if (status === 403) {
-        return rejectWithValue('You are not authorized to delete this article');
-      }
-
-      return rejectWithValue(serverMsg);
-    }
-  }
-);
-
-// Update article
-export const updatePost = createAsyncThunk(
-  'articles/updatePost',
-  async ({ articleId, postData }, { rejectWithValue }) => {
-    try {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        log('error', 'No authentication token found');
-        return rejectWithValue('Authentication required');
-      }
-
-      log('info', 'Updating article', { 
-        articleId,
-        titleLength: postData.title?.length,
-        contentLength: postData.content?.length 
-      });
-
-      const response = await axios.put(
-        `${API_BASE_URL}/articles/${articleId}`,
-        postData,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      log('success', 'Article updated successfully', {
-        articleId,
-        title: response.data?.title
-      });
-
-      return response.data;
-    } catch (error) {
-      log('error', 'Failed to update article', {
-        status: error.response?.status,
-        message: error.response?.data?.message || error.message,
-        articleId
-      });
-
-      const status = error?.response?.status;
-      let serverMsg = error.response?.data?.message || 
-                     error.response?.data?.error || 
-                     error.message || 
-                     'Failed to update post';
-
-      if (status === 401) {
-        log('warning', 'Authentication failed, clearing tokens');
-        try {
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('authUser');
-        } catch (e) {
-          log('error', 'Error clearing localStorage', e);
-        }
-        return rejectWithValue('Session expired. Please login again.');
-      }
-
-      if (status === 403) {
-        return rejectWithValue('You are not authorized to update this article');
-      }
-
-      return rejectWithValue(serverMsg);
-    }
-  }
-);
 
 // Alias for backward compatibility
 export const fetchPostById = fetchArticleById;
 
 // ==================== SLICE DEFINITION ====================
 
-// ✅ Normalize article shape so each article has a consistent author object
+//  Normalize article shape so each article has a consistent author object
 // CRITICAL: This ensures post.author/post.user contains the ACTUAL POST AUTHOR's data
 // (username, profilePhoto), NOT the currently logged-in user's data
 const normalizeArticle = (raw) => {
   if (!raw || typeof raw !== 'object') return raw;
   const article = Array.isArray(raw) ? raw : { ...raw };
 
-  // 🔍 DEBUG: Log raw article structure
+  //  Log raw article structure
   console.log('🔍 ArticlesSlice normalizeArticle - Raw article keys:', Object.keys(article).slice(0, 20));
   console.log('🔍 ArticlesSlice normalizeArticle - user:', article.user);
   console.log('🔍 ArticlesSlice normalizeArticle - author:', article.author);
   console.log('🔍 ArticlesSlice normalizeArticle - postedBy:', article.postedBy);
   console.log('🔍 ArticlesSlice normalizeArticle - createdBy:', article.createdBy);
 
-  // ✅ Extract the post author from backend response (various field names)
+  //  Extract the post author from backend response (various field names)
   // This is the ACTUAL author who created the post, could be anyone
   const user = article.user || article.author || article.postedBy || article.createdBy || null;
 
@@ -413,14 +292,14 @@ const normalizeArticle = (raw) => {
 
   const userPhoto = candidate(user) || article.userProfilePhoto || article.profilePhoto || article.profilePhotoUrl || null;
 
-  // ✅ Build normalized author object with consistent field names
+  //  Build normalized author object with consistent field names
   const normalizedUser = user && typeof user === 'object' ? { ...user } : {};
   if (userPhoto) normalizedUser.userProfilePhoto = normalizedUser.userProfilePhoto || userPhoto;
 
   // 🔍 DEBUG: Log normalized result
-  console.log('✅ ArticlesSlice normalizeArticle - Normalized user:', normalizedUser);
+  console.log('ArticlesSlice normalizeArticle - Normalized user:', normalizedUser);
 
-  // ✅ Attach normalized author back to article under `user` field
+  // Attach normalized author back to article under `user` field
   // Result: post.user = { _id, username, profilePhoto, ... } of the POST AUTHOR
   const normalized = { ...article, user: normalizedUser };
   return normalized;
@@ -439,10 +318,6 @@ const articlesSlice = createSlice({
     articleError: null,
     commentLoading: false,
     commentError: null,
-    deleteLoading: false,
-    deleteError: null,
-    updateLoading: false,
-    updateError: null,
     lastFetched: null,
   },
   reducers: {
@@ -451,24 +326,12 @@ const articlesSlice = createSlice({
       state.createPostError = null;
       state.articleError = null;
       state.commentError = null;
-      state.deleteError = null;
-      state.updateError = null;
     },
     addPost: (state, action) => {
       state.posts.unshift(action.payload);
     },
     clearCurrentArticle: (state) => {
       state.currentArticle = null;
-    },
-    updatePostOptimistically: (state, action) => {
-      const { articleId, postData } = action.payload;
-      const index = state.posts.findIndex(p => (p._id || p.id) === articleId);
-      if (index !== -1) {
-        state.posts[index] = { ...state.posts[index], ...postData };
-      }
-      if (state.currentArticle && (state.currentArticle._id === articleId || state.currentArticle.id === articleId)) {
-        state.currentArticle = { ...state.currentArticle, ...postData };
-      }
     },
     addCommentOptimistically: (state, action) => {
       const { articleId, comment } = action.payload;
@@ -487,13 +350,6 @@ const articlesSlice = createSlice({
         state.posts[postIndex].comments.unshift(comment);
       }
     },
-    removePost: (state, action) => {
-      const articleId = action.payload;
-      state.posts = state.posts.filter(p => (p._id || p.id) !== articleId);
-      if (state.currentArticle && (state.currentArticle._id === articleId || state.currentArticle.id === articleId)) {
-        state.currentArticle = null;
-      }
-    },
     // Reset entire state (useful for logout)
     resetArticles: (state) => {
       state.posts = [];
@@ -506,14 +362,10 @@ const articlesSlice = createSlice({
       state.articleError = null;
       state.commentLoading = false;
       state.commentError = null;
-      state.deleteLoading = false;
-      state.deleteError = null;
-      state.updateLoading = false;
-      state.updateError = null;
       state.lastFetched = null;
     },
 
-    // 🔥 NEW: Update article author username when follow is accepted
+    // NEW: Update article author username when follow is accepted
     // Injects username into post.user.username based on userId
     injectAuthorUsername: (state, action) => {
       const { userId, username } = action.payload;
@@ -532,7 +384,7 @@ const articlesSlice = createSlice({
       }
     },
 
-    // ❤️ NEW: Update article likes (from socket or API)
+    // NEW: Update article likes (from socket or API)
     // Supports both { articleId, article } (full article) and { articleId, likes, likesCount } (partial)
     updateArticleLikes: (state, action) => {
       const { articleId, article, likes, likesCount } = action.payload;
@@ -670,50 +522,6 @@ const articlesSlice = createSlice({
       .addCase(createComment.rejected, (state, action) => {
         state.commentLoading = false;
         state.commentError = action.payload;
-      })
-      
-      // Delete post
-      .addCase(deletePost.pending, (state) => {
-        state.deleteLoading = true;
-        state.deleteError = null;
-      })
-      .addCase(deletePost.fulfilled, (state, action) => {
-        state.deleteLoading = false;
-        const { articleId } = action.payload;
-        state.posts = state.posts.filter(p => (p._id || p.id) !== articleId);
-        if (state.currentArticle && (state.currentArticle._id === articleId || state.currentArticle.id === articleId)) {
-          state.currentArticle = null;
-        }
-      })
-      .addCase(deletePost.rejected, (state, action) => {
-        state.deleteLoading = false;
-        state.deleteError = action.payload;
-      })
-      
-      // Update post
-      .addCase(updatePost.pending, (state) => {
-        state.updateLoading = true;
-        state.updateError = null;
-      })
-      .addCase(updatePost.fulfilled, (state, action) => {
-        state.updateLoading = false;
-        const updatedArticle = action.payload;
-        const articleId = updatedArticle._id || updatedArticle.id;
-        
-        // Update in posts list
-        const postIndex = state.posts.findIndex(p => (p._id || p.id) === articleId);
-        if (postIndex !== -1) {
-          state.posts[postIndex] = { ...state.posts[postIndex], ...updatedArticle };
-        }
-        
-        // Update current article if it's the one being updated
-        if (state.currentArticle && (state.currentArticle._id === articleId || state.currentArticle.id === articleId)) {
-          state.currentArticle = { ...state.currentArticle, ...updatedArticle };
-        }
-      })
-      .addCase(updatePost.rejected, (state, action) => {
-        state.updateLoading = false;
-        state.updateError = action.payload;
       });
   },
 });
@@ -723,9 +531,7 @@ export const {
   clearArticlesError, 
   addPost, 
   clearCurrentArticle,
-  updatePostOptimistically,
   addCommentOptimistically,
-  removePost,
   resetArticles,
   injectAuthorUsername,
   updateArticleLikes
@@ -742,10 +548,6 @@ export const selectArticleLoading = (state) => state.articles.articleLoading;
 export const selectArticleError = (state) => state.articles.articleError;
 export const selectCommentLoading = (state) => state.articles.commentLoading;
 export const selectCommentError = (state) => state.articles.commentError;
-export const selectDeleteLoading = (state) => state.articles.deleteLoading;
-export const selectDeleteError = (state) => state.articles.deleteError;
-export const selectUpdateLoading = (state) => state.articles.updateLoading;
-export const selectUpdateError = (state) => state.articles.updateError;
 export const selectPostById = (state, articleId) => 
   state.articles.posts.find(p => (p._id || p.id) === articleId);
 export const selectLastFetched = (state) => state.articles.lastFetched;

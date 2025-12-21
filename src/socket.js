@@ -1,4 +1,3 @@
-
 // src/socket.js
 import { io } from "socket.io-client";
 import store from "./Store";
@@ -35,7 +34,7 @@ function registerUserIfNeeded() {
 
   socket.emit("register", userId);
   registeredUserId = userId;
-  console.log("🔥 socket registered:", userId);
+  console.log("socket registered:", userId);
 }
 
 // ================= CONNECT SOCKET =================
@@ -53,7 +52,7 @@ function connectSocket() {
   });
 
   socket.on("connect", () => {
-    console.log("✅ socket connected");
+    console.log("socket connected");
     registerUserIfNeeded();
   });
 
@@ -126,11 +125,11 @@ function connectSocket() {
     );
   });
 
-  // ================= ❤️ ARTICLE LIKED (OWNER-ONLY) =================
+  // =================  ARTICLE LIKED (OWNER-ONLY) =================
   socket.on("articleLiked", (data) => {
     console.log("[SOCKET] articleLiked event received", data);
 
-    // 🔁 Update likes count everywhere (if provided)
+    //  Update likes count everywhere (if provided)
     if (data.article?._id) {
       store.dispatch(
         updateArticleLikes({
@@ -367,4 +366,3 @@ function emit(event, payload) {
 }
 
 export { connectSocket, disconnectSocket, getSocket, on, off, emit };
-

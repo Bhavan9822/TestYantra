@@ -8,10 +8,6 @@ const API_BASE = "https://robo-zv8u.onrender.com/api";
 
 // ================= ASYNC THUNKS =================
 
-/**
- * ACCEPT FOLLOW REQUEST
- * payload: { requesterId }
- */
 export const acceptFollowRequest = createAsyncThunk(
   "notifications/acceptFollowRequest",
   async ({ requesterId }, { rejectWithValue }) => {
@@ -29,8 +25,6 @@ export const acceptFollowRequest = createAsyncThunk(
         }
       );
 
-      // IMPORTANT:
-      // Backend emits socket event → socket.js handles UI update
       return res.data;
     } catch (err) {
       return rejectWithValue(

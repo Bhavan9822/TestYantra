@@ -1,11 +1,9 @@
-
 import React, { useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import { Provider, useSelector } from "react-redux";
 import { ToastContainer } from "react-toastify";
 import store from "./Store.jsx";
 import { connectSocket } from "./socket";
-
 import Regisphoto from "./Register/Regisphoto.jsx";
 import Login from "./Register/Login.jsx";
 import Home from "./home/Home";
@@ -16,10 +14,7 @@ import Profile from "./component/Profile.jsx";
 
 import "react-toastify/dist/ReactToastify.css";
 
-/**
- * 🔔 Socket initializer component
- * This MUST be inside <Provider />
- */
+
 const SocketInitializer = () => {
   const currentUser = useSelector((state) => state.auth.currentUser);
 
@@ -34,13 +29,13 @@ const SocketInitializer = () => {
     // If already connected
     if (socket.connected) {
       socket.emit("registerUser", currentUser._id);
-      console.log("🔥 registerUser emitted (connected):", currentUser._id);
+      console.log("registerUser emitted (connected):", currentUser._id);
     }
 
     // If connection happens later
     socket.on("connect", () => {
       socket.emit("registerUser", currentUser._id);
-      console.log("🔥 registerUser emitted (on connect):", currentUser._id);
+      console.log("registerUser emitted (on connect):", currentUser._id);
     });
 
     return () => {
@@ -54,10 +49,10 @@ const SocketInitializer = () => {
 const App = () => {
   return (
     <Provider store={store}>
-      {/* 🔔 Socket setup */}
+      {/*  Socket setup */}
       <SocketInitializer />
 
-      {/* 🔔 Toasts */}
+      {/*  Toasts */}
       <ToastContainer
         position="top-right"
         autoClose={3000}
@@ -66,7 +61,7 @@ const App = () => {
         draggable
       />
 
-      {/* 🔁 Routes */}
+      {/*  Routes */}
       <Routes>
         <Route path="/register" element={<Regisphoto />} />
         <Route path="/" element={<Login />} />
