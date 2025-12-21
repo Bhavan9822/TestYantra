@@ -452,7 +452,7 @@ const Articles = () => {
         article: result.article,
       }));
     } catch (error) {
-      console.error('❌ Like failed:', error);
+      console.error('Like failed:', error);
       // Rollback to original state
       dispatch(updateArticleLikes({
         articleId,

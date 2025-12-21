@@ -5,28 +5,83 @@ import {  useDispatch } from 'react-redux';
 import { selectUnreadCount } from '../NotificationSlice';
 import { sendFollowRequest } from '../SearchSlice';
 import { logout } from '../Slice';
+import { acceptFollowRequest } from '../FollowAcceptSlice';
+import { rejectFollowRequest } from '../FollowRejectSlice';
 import { toast } from 'react-toastify';
 
 
 const Profile = () => {
   const { currentUser } = useSelector((state) => state.auth || {});
-  const [isDark, setIsDark] = useState(false);
+  // const [isDark, setIsDark] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const dispatch = useDispatch();
 
   const followersCount = currentUser?.followers?.length || 0;
   const followingCount = currentUser?.following?.length || 0;
-  const [activeList, setActiveList] = useState(null); // 'followers' | 'following' | null
+  const pendingRequestsCount = currentUser?.pendingRequests?.length || 0;
+  const [activeList, setActiveList] = useState(null); // 'followers' | 'following' | 'pending' | null
 
   const navigate = useNavigate();
   const unreadCount = useSelector(selectUnreadCount) || 0;
 
   const searchRef = useRef(null);
   const [inp,setinp]=useState("")
+  const [loadingRequests, setLoadingRequests] = useState({});
+  const [pendingList, setPendingList] = useState(currentUser?.pendingRequests || []);
 
   const handelFollow=(e)=>{
       setinp(e.target.value);
     }
+  const handleAcceptRequest = async (followerId) => {
+    try {
+      setLoadingRequests(prev => ({ ...prev, [followerId]: 'accepting' }));
+      const result = await dispatch(acceptFollowRequest(followerId)).unwrap();
+      
+      // Remove from pending list
+      setPendingList(prev => prev.filter(u => (u._id || u.id) !== followerId));
+      
+      toast.success('Follow request accepted');
+    } catch (error) {
+      toast.error(error || 'Failed to accept request');
+      setLoadingRequests(prev => {
+        const newState = { ...prev };
+        delete newState[followerId];
+        return newState;
+      });
+    } finally {
+      setLoadingRequests(prev => {
+        const newState = { ...prev };
+        delete newState[followerId];
+        return newState;
+      });
+    }
+  };
+
+  const handleRejectRequest = async (followerId) => {
+    try {
+      setLoadingRequests(prev => ({ ...prev, [followerId]: 'rejecting' }));
+      const result = await dispatch(rejectFollowRequest(followerId)).unwrap();
+      
+      // Remove from pending list
+      setPendingList(prev => prev.filter(u => (u._id || u.id) !== followerId));
+      
+      toast.success('Follow request rejected');
+    } catch (error) {
+      toast.error(error || 'Failed to reject request');
+      setLoadingRequests(prev => {
+        const newState = { ...prev };
+        delete newState[followerId];
+        return newState;
+      });
+    } finally {
+      setLoadingRequests(prev => {
+        const newState = { ...prev };
+        delete newState[followerId];
+        return newState;
+      });
+    }
+  };
+
   const handelfollowsubmit = async (e) => {
       e.preventDefault();
       const username = inp.trim();
@@ -83,11 +138,7 @@ const Profile = () => {
 
   // Get data from Redux store
   const { posts = [], loading = false, error = null, createPostLoading = false } = useSelector((state) => state.articles || {});
-  // const {  
-  //     friends = [], 
-  //   } = useSelector((state) => state.search || {});
-
-
+  
   const defaultAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23cbd5e1'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E";
 
   const getImageSrc = useCallback((photo) => {
@@ -140,7 +191,7 @@ const Profile = () => {
 
   const { displayName, email, photoURL, bio = 'No bio yet', interests = [] } = currentUser;
 
-  // ✅ Filter to show only MY posts (not friends' posts)
+  //  Filter to show only MY posts (not friends' posts)
   const myPosts = useMemo(() => {
     if (!currentUser?._id || !Array.isArray(posts)) return [];
     return posts.filter(post => {
@@ -161,7 +212,7 @@ const Profile = () => {
     const initials = (author || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0,3);
     return { id, title, date, author, initials };
   });
-  const toggleTheme = () => setIsDark((v) => !v);
+  // const toggleTheme = () => setIsDark((v) => !v);
 
   return (
      <main className="w-full overflow-scroll relative top-0 bg-gradient-to-b from-[rgb(151,222,246)] to-[rgb(210,137,228)] min-h-screen">
@@ -304,7 +355,7 @@ const Profile = () => {
         {/* Stats */}
         <div className="flex justify-center gap-8 mt-8">
           <div className="bg-white dark:bg-blue-500 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center">
-            {/* ✅ Shows only MY posts count, not all posts */}
+            {/*  Shows only MY posts count, not all posts */}
             <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{myPosts.length}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Posts</p>
           </div>
@@ -324,13 +375,28 @@ const Profile = () => {
             <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{followingCount}</h3>
             <p className="text-xs text-gray-600 dark:text-gray-200">Following</p>
           </div>
+          {pendingList.length > 0 && (
+            <div
+              className="bg-white dark:bg-yellow-600 shadow-lg w-28 h-24 rounded-2xl flex flex-col items-center justify-center cursor-pointer select-none relative"
+              onClick={() => setActiveList(activeList === 'pending' ? null : 'pending')}
+              title="View pending requests"
+            >
+              <h3 className="font-bold text-2xl text-gray-800 dark:text-white">{pendingList.length}</h3>
+              <p className="text-xs text-gray-600 dark:text-gray-200">Pending</p>
+              {pendingList.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                  {pendingList.length}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Followers / Following List */}
+        {/* Followers / Following / Pending List */}
         {activeList && (
           <div className="w-full max-w-5xl mt-8 px-4">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold text-gray-800 dark:text-white capitalize">{activeList}</h3>
+              <h3 className="text-xl font-semibold text-gray-800 dark:text-white capitalize">{activeList} Requests</h3>
               <button
                 className="text-sm px-3 py-1 rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
                 onClick={() => setActiveList(null)}
@@ -338,21 +404,95 @@ const Profile = () => {
                 Close
               </button>
             </div>
-            {(
-              activeList === 'followers' ? (currentUser?.followers || []) : (currentUser?.following || [])
-            ).length === 0 ? (
-              <p className="text-gray-600 dark:text-gray-300">No users</p>
+            {activeList === 'pending' ? (
+              // Pending Requests List
+              pendingList.length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-300">No pending requests</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {pendingList.map((u, idx) => {
+                    const id = u?._id || u?.id || idx;
+                    const name = u?.username || u?.name || u?.email || 'User';
+                    const username = u?.username || (u?.email ? u.email.split('@')[0] : 'user');
+                    const emailVal = u?.email || u?.mail || u?.contactEmail || '';
+                    const photo = getImageSrc(u?.profilePhoto || u?.avatar || u?.photoURL || u?.image);
+                    const isLoading = loadingRequests[id];
+                    return (
+                      <div
+                        key={`pending-${id}`}
+                        className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 flex flex-col items-center text-center hover:shadow-md transition"
+                      >
+                        <img
+                          src={photo}
+                          alt="profile"
+                          className="w-16 h-16 rounded-full mb-3 object-cover"
+                          onError={(e) => { e.target.onerror = null; e.target.src = getImageSrc(null); }}
+                        />
+                        <div className="font-semibold text-gray-800 dark:text-white">{name}</div>
+                        <div className="text-xs text-gray-500">@{username}</div>
+                        {emailVal && (
+                          <div className="text-xs text-gray-500 mt-1">{emailVal}</div>
+                        )}
+                        <div className="flex gap-2 mt-4 w-full">
+                          <button
+                            onClick={() => handleAcceptRequest(id)}
+                            disabled={isLoading}
+                            className={`flex-1 px-3 py-2 bg-green-500 text-white text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1 ${
+                              isLoading 
+                                ? 'opacity-70 cursor-not-allowed' 
+                                : 'hover:bg-green-600 active:scale-95'
+                            }`}
+                          >
+                            {isLoading === 'accepting' ? (
+                              <>
+                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                <span>Accepting...</span>
+                              </>
+                            ) : (
+                              'Accept'
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleRejectRequest(id)}
+                            disabled={isLoading}
+                            className={`flex-1 px-3 py-2 bg-red-500 text-white text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1 ${
+                              isLoading 
+                                ? 'opacity-70 cursor-not-allowed' 
+                                : 'hover:bg-red-600 active:scale-95'
+                            }`}
+                          >
+                            {isLoading === 'rejecting' ? (
+                              <>
+                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                <span>Rejecting...</span>
+                              </>
+                            ) : (
+                              'Reject'
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                {(
-                  activeList === 'followers' ? (currentUser?.followers || []) : (currentUser?.following || [])
-                ).map((u, idx) => {
-                  const id = u?._id || u?.id || idx;
-                  const name = u?.username || u?.name || u?.email || 'User';
-                  const username = u?.username || (u?.email ? u.email.split('@')[0] : 'user');
-                  const emailVal = u?.email || u?.mail || u?.contactEmail || '';
-                  const photo = getImageSrc(u?.profilePhoto || u?.avatar || u?.photoURL || u?.image);
-                  return (
+              // Followers / Following List
+              (
+                activeList === 'followers' ? (currentUser?.followers || []) : (currentUser?.following || [])
+              ).length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-300">No users</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                  {(
+                    activeList === 'followers' ? (currentUser?.followers || []) : (currentUser?.following || [])
+                  ).map((u, idx) => {
+                    const id = u?._id || u?.id || idx;
+                    const name = u?.username || u?.name || u?.email || 'User';
+                    const username = u?.username || (u?.email ? u.email.split('@')[0] : 'user');
+                    const emailVal = u?.email || u?.mail || u?.contactEmail || '';
+                    const photo = getImageSrc(u?.profilePhoto || u?.avatar || u?.photoURL || u?.image);
+                    return (
                     <div
                       key={`${activeList}-${id}`}
                       className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 flex flex-col items-center text-center hover:shadow-md transition"
@@ -372,6 +512,7 @@ const Profile = () => {
                   );
                 })}
               </div>
+              )
             )}
           </div>
         )}
@@ -407,8 +548,6 @@ const Profile = () => {
                     {article.title}
                   </h3>
                   <div className="flex items-center gap-3 mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    {/* <span>{article.author}</span> */}
-                    {/* <span>•</span> */}
                     <span>{article.date}</span>
                   </div>
                 </div>

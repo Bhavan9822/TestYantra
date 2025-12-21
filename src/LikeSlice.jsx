@@ -28,7 +28,7 @@ export const toggleLike = createAsyncThunk(
         }
       );
 
-      console.log('✅ Like toggled successfully:', response.data);
+      console.log('Like toggled successfully:', response.data);
       const likedFlag = response.data?.liked ?? response.data?.isLiked ?? null;
       const msg = response.data?.message;
 
@@ -44,7 +44,7 @@ export const toggleLike = createAsyncThunk(
         },
       };
     } catch (error) {
-      console.error('❌ Like toggle failed:', error.response?.data || error.message);
+      console.error('Like toggle failed:', error.response?.data || error.message);
       return rejectWithValue(
         error.response?.data?.message || error.message || 'Failed to toggle like'
       );
@@ -91,7 +91,7 @@ const likeSlice = createSlice({
         state.loadingArticles[articleId] = false;
         if (message === 'Article liked') {
           console.log('[LIKE] toast triggered', { articleId, message });
-          toast.success('You liked this article ❤️');
+          toast.success('You liked this article');
         } else if (message === 'Article unliked') {
           console.log('[LIKE] toast triggered', { articleId, message });
           toast.info('You unliked this article');

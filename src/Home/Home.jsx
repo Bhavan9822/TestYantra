@@ -13,8 +13,8 @@ import {
   followRequestReceived,
   fetchAllUsers
 } from '../usersSlice';
-import  { incrementFollowing, addToFollowing }  from '../Slice';
-import { incrementFollowers, addToFollowers }  from '../Slice';
+import  {  addToFollowing }  from '../Slice';
+import { addToFollowers }  from '../Slice';
 import NotificationBell from '../component/NotificationBell';
 import { connectSocket, on as socketOn } from '../socket';
 import { createPost, fetchPosts, injectAuthorUsername, updateArticleLikes } from '../ArticlesSlice';
@@ -332,7 +332,7 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState({
     targetUsername:""
   });
-  const [messageInput, setMessageInput] = useState('');
+  // const [messageInput, setMessageInput] = useState('');
   // const [showChat, setShowChat] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPostTitle, setNewPostTitle] = useState('');
@@ -452,37 +452,6 @@ const Home = () => {
       userId: user._id, 
       status: 'requested' 
     }));
-
-    // try {
-    //   // Send follow request via userId
-    //   // const result = await dispatch(sendFollowRequest(user._id)).unwrap();
-    //   await dispatch(sendFollowRequest({ 
-    //   targetUsername: user.username 
-    // })).unwrap();
-      
-    //   if (result && result.success) {
-    //     toast.success('Follow request sent successfully!');
-        
-    //     // Emit socket event for real-time notification
-    //     try {
-    //       const token = localStorage.getItem('authToken');
-    //       connectSocket(token);
-    //     } catch (socketErr) {
-    //       console.warn('Socket notification failed:', socketErr);
-    //     }
-    //   }
-    // } catch (error) {
-    //   console.error('Follow request failed:', error);
-      
-    //   // Revert optimistic update on failure
-    //   dispatch(updateUserFollowStatus({ 
-    //     userId: user._id, 
-    //     status: 'none' 
-    //   }));
-      
-    //   toast.error(error || 'Failed to send follow request');
-    // }
-
     try {
         await dispatch(
           sendFollowRequest({ targetUsername: user.username })
@@ -538,14 +507,6 @@ const Home = () => {
       const token = localStorage.getItem('authToken');
       connectSocket(token);
       
-      // Join user's personal room
-      // const userId = currentUser?._id || currentUser?.id;
-      // if (userId) {
-      //   joinRoom(`user:${userId}`).catch((err) => 
-      //     console.warn('joinRoom failed', err)
-      //   );
-      // }
-
       // Listen for incoming follow requests
       const offFollowRequest = socketOn('followRequestReceived', (payload) => {
         try {
@@ -574,7 +535,7 @@ const Home = () => {
             }));
           }
           
-          // 🔥 HELPER: Extract username from payload, searchResults, or use fallback
+          //  HELPER: Extract username from payload, searchResults, or use fallback
           const getUsername = (userId) => {
             // Try to get from searchResults first
             if (Array.isArray(searchResults)) {
@@ -585,7 +546,7 @@ const Home = () => {
             return null;
           };
           
-          // 🔥 UPDATE FOLLOWER/FOLLOWING WITH USER DATA
+          //  UPDATE FOLLOWER/FOLLOWING WITH USER DATA
           // If current user is the requester (User A), add followed user to their following list
           if (payload.requesterId === currentUser?._id && payload.targetUserId) {
             // Try to get username from payload or searchResults
@@ -596,7 +557,7 @@ const Home = () => {
                 _id: payload.targetUserId,
                 username: username
               }));
-              // 🔥 INJECT USERNAME INTO ARTICLES for instant display
+              //  INJECT USERNAME INTO ARTICLES for instant display
               dispatch(injectAuthorUsername({
                 userId: payload.targetUserId,
                 username: username
@@ -763,7 +724,7 @@ const Home = () => {
         article: result.article,
       }));
     } catch (error) {
-      console.error('❌ Like failed:', error);
+      console.error('Like failed:', error);
       // Rollback to original state
       dispatch(updateArticleLikes({
         articleId,

@@ -1,5 +1,3 @@
-
-// !!!!!!!!!!!!!!!!!!!!!!!!!!
 // src/Store.jsx
 import { configureStore } from "@reduxjs/toolkit";
 
@@ -49,16 +47,16 @@ const store = configureStore({
     search: searchReducer,
     comments: commentReducer,
 
-    // 🔔 Notifications (socket + localStorage)
+    //  Notifications (socket + localStorage)
     notifications: notificationReducer,
 
-    // 👥 Follow flows
+    //  Follow flows
     followSend: followSendReducer,
     followAccept: followAcceptReducer,
     followReject: followRejectReducer,
 
     
-    // ❤️ Likes
+    //  Likes
     likes: likeReducer,
     users: usersReducer,
   },
