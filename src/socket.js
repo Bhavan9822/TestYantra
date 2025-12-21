@@ -227,8 +227,8 @@ function connectSocket() {
     );
   });
 
-  // =================  NEW COMMENT =================
-  // Based on working friend's implementation - SIMPLIFIED and RELIABLE
+  // =================  NEW COMMENT / REPLY =================
+  // Notify only intended recipients: article owner and parent comment author (for replies)
   socket.on("newComment", (data) => {
     console.log("[SOCKET] newComment received", data);
 
@@ -246,7 +246,28 @@ function connectSocket() {
       return;
     }
 
-    // Extract from payload - TRUST it directly
+    const articleId = data.articleId || data.comment?.articleId;
+    if (!articleId) {
+      console.log("[SOCKET] Skip newComment: missing articleId");
+      return;
+    }
+
+    // Resolve article owner from store (re-using logic pattern from like handler)
+    const resolveOwnerIdFromStore = () => {
+      const articlesState = state?.articles || {};
+      const list = articlesState.posts || [];
+      const currentArticle = articlesState.currentArticle;
+      const candidate = list.find((a) => (a._id || a.id) === articleId) || currentArticle;
+      if (!candidate) return null;
+      const userObj = candidate.user || candidate.author || candidate.postedBy || candidate.userId || null;
+      if (typeof userObj === "object") return userObj._id || userObj.id || userObj.userId || null;
+      if (typeof userObj === "string") return userObj;
+      return candidate.ownerId || candidate.authorId || null;
+    };
+
+    const ownerId = data.ownerId || resolveOwnerIdFromStore();
+
+    // Extract commenter details
     const commenterName =
       data.comment?.by ||
       data.comment?.from ||
@@ -255,34 +276,46 @@ function connectSocket() {
       data.comment?.postedBy?.username ||
       "Someone";
 
-    // Support both object and string user IDs
     const commenterId =
       data.comment?.by ||
       data.comment?.from ||
       (typeof data.comment?.user === "object" ? data.comment?.user?._id : data.comment?.user) ||
       data.comment?.author?._id ||
       data.comment?.postedBy?._id;
+
     const commentText = data.comment?.text || data.comment?.content || "";
-    const articleId = data.articleId;
 
-    if (!articleId) {
-      console.log("[SOCKET] Skip newComment: missing articleId");
-      return;
-    }
-
-    // Extract ID value if commenter is an object
     const commenterIdValue = typeof commenterId === "object" ? commenterId?._id : commenterId;
     const commenterNameValue = typeof commenterName === "object" ? commenterName?.username || commenterName?.name : commenterName;
 
+    // Parent comment / reply context
+    const parent = data.comment?.parentComment || data.parentComment;
+    const parentAuthorId =
+      (typeof parent?.user === "object" ? parent?.user?._id : parent?.user) ||
+      parent?.author?._id ||
+      parent?.postedBy?._id ||
+      data.comment?.replyToUserId ||
+      data.replyToUserId ||
+      null;
+
+    const isReply = Boolean(parentAuthorId);
+
     // ========== SELF-NOTIFICATION GUARD ==========
-    // Never show notification to the commenter themselves
     if (commenterIdValue && myUserId && String(myUserId) === String(commenterIdValue)) {
       console.log("[SOCKET] Skip newComment: self-notification prevented", { myUserId, commenterIdValue });
       return;
     }
 
-    // ========== Add comment to top of article's comments ==========
-    // Unshift comment to the article in Redux so it appears immediately
+    // ========== INTENDED RECIPIENT GUARD ==========
+    // Notify only if current user is article owner OR parent comment author (for replies)
+    const isOwnerRecipient = ownerId && String(myUserId) === String(ownerId);
+    const isParentRecipient = parentAuthorId && String(myUserId) === String(parentAuthorId);
+    if (!isOwnerRecipient && !isParentRecipient) {
+      console.log("[SOCKET] Skip newComment: current user not intended recipient", { myUserId, ownerId, parentAuthorId });
+      return;
+    }
+
+    // Add comment into article comments for intended recipients
     store.dispatch(
       addCommentOptimistically({
         articleId,
@@ -290,14 +323,17 @@ function connectSocket() {
       })
     );
 
-    // ========== Dispatch notification ==========
+    const message = isReply
+      ? `${commenterNameValue} replied: "${commentText}"`
+      : `${commenterNameValue} commented: "${commentText}"`;
+
     store.dispatch(
       addNotification({
         type: "ARTICLE_COMMENTED",
         fromUserId: commenterIdValue,
         fromUsername: commenterNameValue,
         articleId,
-        message: `${commenterNameValue} commented: "${commentText}"`,
+        message,
         createdAt: new Date().toISOString(),
         isRead: false,
       })
