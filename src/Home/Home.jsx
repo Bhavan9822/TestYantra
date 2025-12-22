@@ -217,26 +217,27 @@ const Home = () => {
       
       if (result.success || result.message === 'Follow request sent successfully') {
         toast.success(`Follow request sent to ${username}`);
-      } else if (result.message?.includes('already following') || result.error?.includes('already following')) {
+      } else if ((result.message && result.message.includes('already following')) || (result.error && result.error.includes('already following'))) {
         toast.info(`You are already following ${username}`);
-      } else if (result.message?.includes('pending') || result.error?.includes('pending')) {
+      } else if ((result.message && result.message.includes('pending')) || (result.error && result.error.includes('pending'))) {
         toast.info(`Follow request already sent to ${username}`);
       } else {
         toast.success('Follow request sent successfully');
       }
     } catch (error) {
       console.error('Follow request failed:', error);
+      const errorMessage = typeof error === 'string' ? error : (error?.message || JSON.stringify(error));
       
-      if (error?.includes?.('not found') || error?.includes?.('does not exist')) {
+      if (errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
         toast.error(`User "${username}" not found`);
-      } else if (error?.includes?.('already following')) {
+      } else if (errorMessage.includes('already following')) {
         toast.info(`You are already following ${username}`);
-      } else if (error?.includes?.('pending')) {
+      } else if (errorMessage.includes('pending')) {
         toast.info(`Follow request already pending for ${username}`);
-      } else if (error?.includes?.('yourself')) {
+      } else if (errorMessage.includes('yourself')) {
         toast.error("You can't follow yourself");
       } else {
-        toast.error(error || 'Failed to send follow request');
+        toast.error(errorMessage || 'Failed to send follow request');
       }
     } finally {
       setinp('');
